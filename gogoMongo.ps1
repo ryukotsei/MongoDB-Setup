@@ -29,7 +29,7 @@ Function Create-Mongo {
     If ($prt -eq ""){$prt = "27017"}
 
     $dbDir = join-path -Path $defaultRoot -ChildPath $srvcName
-    Confirm-Dir -dir "$defaultRoot\$srvcName"
+    Confirm-Dir -dir $dbDir
 
     #Copy-Item -Path $keyFile -Destination $dbDir -Confirm:$false -Force
     #$keyCode = "$keyFile\$key"
@@ -256,7 +256,6 @@ Function Get-ReplicaConfig { # retrieve replica configuration
 Function Initiate-Replica { # initiates the replica
 
     Write-Host "`nEnter the Computername:Port of the node to initiate the replica set on. All other nodes will be added to this, Primary, node."
-
     $node = Read-Host "Node computername:port"
 
     Write-Host "Initiating replica for node: ..."
@@ -389,7 +388,7 @@ Function Generate-ConnectionString { # build and output connection string for th
 
 Function Get-OptionList { # &"MyFunctionName" $arg1 $arg2
     $options = [ordered]@{"New Mongo node                    " = 1; `
-                          "Initiate replica set (primaryonly)" = 2; `
+                          "Initiate replica set              " = 2; `
                           "Add server to replica set         " = 3; `
                           "Remove node from replica set      " = 4; `
                           "View replica status               " = 5; `
@@ -418,7 +417,6 @@ Function Get-OptionList { # &"MyFunctionName" $arg1 $arg2
         Get-OptionList # return to options
     }
     ElseIf ($slct -eq "3") {
-        #Add-ToReplica
         Add-ToReplica
         Get-OptionList # return to options
     }

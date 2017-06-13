@@ -1,4 +1,4 @@
-﻿
+﻿# extra code i made that may be useful down the road... or not
 
 $exe = "C:\Program Files\MongoDB\Server\3.4\bin\mongo.exe"
 
