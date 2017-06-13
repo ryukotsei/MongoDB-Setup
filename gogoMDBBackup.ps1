@@ -18,7 +18,7 @@ Function Confirm-Directory { # create dir if not exist
 }
 
 Function Backup-Cleanup {
-    #Write-Log "Cleaning up old backups..."
+    Write-Log "Cleaning up old backups..."
 
     $tooOld = (Get-Date).AddDays($backupAge) # 1 month ago
     $backups = Get-ChildItem -Path "$backupDir\*" -Directory
@@ -31,10 +31,10 @@ Function Backup-Cleanup {
         $bakDate = [datetime]"$day/$month/$year"
         If (!($bakDate -gt $tooOld)) { # if Folder date NOT -gt 1month ago   | example Sunday, January 1, 2017 12:00:00 AM (IS NOT) -gt Friday, May 12, 2017 1:54:40 PM = True | not earlier than the ealiest date it can be
             Remove-Item $_ -Recurse -Confirm:$false -Force
-            #Write-Log "Removed old backup directory: $_"
+            Write-Log "Removed old backup directory: $_"
         }
     }
-    #Write-Log "Cleanup done."
+    Write-Log "Cleanup done."
 }
 
 # creates snapshot or --oplog: located in top lvl of output dir, called: oplog.bson
@@ -60,7 +60,7 @@ $global:backupDir =  Join-Path -Path $defaultRoot -ChildPath "backups"
 $global:logFile = Join-Path -Path $backupDir -ChildPath "backupLog.log"
 # $env:COMPUTERNAME
 
-#Write-Log "Starting backup process..."
+Write-Log "Starting backup process..."
 
 $now = Get-Date -Format "MMddyyyy"
 $dailyBackupDir = Join-Path -Path $backupDir -ChildPath "bak_$now"
@@ -90,13 +90,13 @@ Catch{
     $Error = $null
 }
 
-#write-Log "Backup done. Location: $dailyBackupDir"
+write-Log "Backup done. Location: $dailyBackupDir"
 
 
 #Start-Process -FilePath "$mongoBackup" -ArgumentList ("$params") -WindowStyle Normal -Verb RunAs -Wait
 
 
-#write-Log "Backup complete."
+write-Log "Backup complete."
 Exit
 # remote backups: https://docs.mongodb.com/manual/tutorial/restore-replica-set-from-backup/
 # mongodump --out C:\whateverbuddy --collection myCollection --db test

@@ -276,7 +276,7 @@ Function Do-FirewallRules { # add firewall rules
     }
 }
 
-Function Create-AutoBackup { # creates Windows scheduled task to backup
+Function Create-ScheduledBackup { # creates Windows scheduled task to backup
 
     $taskTest = Get-ScheduledTask -TaskName $taskName -ErrorAction Ignore
     If ($taskTest -ne $null) { # task already exists
@@ -301,18 +301,18 @@ Function Create-AutoBackup { # creates Windows scheduled task to backup
     If (!(Test-Path -Path $newBackupScriptPath )) { # move backup ps1 script to local backups root dir
         Copy-Item -Path $backupScript -Destination $backupDir -Confirm:$false -Force
     }
-    # copy over vbs script that calls the powershell script with admin priveleges
-    Copy-Item -Path $backupTaskScript -Destination $backupDir -Confirm:$false -Force
-    (Get-Content $newBackupTaskScript) -replace "SCRIPTHERE",$newBackupScriptPath -replace "PORTHERE",$prt | Set-Content $newBackupTaskScript
 
     Write-Host "`nThis will setup the mongo DB to automatically backup daily. You can change these settings at any time under Windows Task Scheduler."
     Write-Host "This script will setup the backups to happen daily.`nTask name: $taskName"
     $prt = Read-Host "Mongo node port"
     $time = Read-Host "Enter the time of day should we backup (e.g. 3:30am)"
-    
-    $action = New-ScheduledTaskAction -Execute "cscript.exe" -Argument $newBackupTaskScript
-    
 
+    # copy over vbs script that calls the powershell script with admin priveleges
+    Copy-Item -Path $backupTaskScript -Destination $backupDir -Confirm:$false -Force
+    (Get-Content $newBackupTaskScript) -replace "SCRIPTHERE",$newBackupScriptPath -replace "PORTHERE",$prt | Set-Content $newBackupTaskScript
+    
+    $action = New-ScheduledTaskAction -Execute "C:\Windows\System32\cscript.exe" -Argument """$newBackupTaskScript"""
+    
     $trigger =  New-ScheduledTaskTrigger -Daily -At $time
     $principal = New-ScheduledTaskPrincipal -UserID "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 
@@ -439,7 +439,7 @@ Function Get-OptionList { # &"MyFunctionName" $arg1 $arg2
         Get-OptionList # return to options
     }
     ElseIf ($slct -eq "8") {
-        Create-AutoBackup
+        Create-ScheduledBackup
         Get-OptionList # return to options
     }
     ElseIf ($slct -eq 9) {
@@ -470,7 +470,7 @@ $global:consoleOutput = $true # output logging to console
 $global:rsName = "rs0" # replicaSet name
 $global:backupScriptName = "gogoMDBBackup.ps1"
 $global:backupTaskScriptName = "backupMongo.vbs"
-$global:autoBackupScript = Join-Path -Path $scriptDir -ChildPath $backupScriptName
+$global:backupScript = Join-Path -Path $scriptDir -ChildPath $backupScriptName
 $global:backupTaskScript = Join-Path -Path $scriptDir -ChildPath $backupTaskScriptName
 $taskName = "MongoDB Backup"
 
