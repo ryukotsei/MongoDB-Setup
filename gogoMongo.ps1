@@ -27,7 +27,11 @@ Function Create-Mongo {
     $srvcName = Read-Host "`nNew Service name"
     $prt = Read-Host "Port(default: 27017)"
     If ($prt -eq ""){$prt = "27017"}
-
+    If ($prt.Length -gt 5) {
+        Write-Host "`nPort can only be 5 characters long! Try again."
+        Create-Mongo
+    }
+    
     $dbDir = join-path -Path $defaultRoot -ChildPath $srvcName
     Confirm-Dir -dir $dbDir
 
@@ -56,17 +60,7 @@ Function Create-Mongo {
 
 }
 
-Function Add-ToReplica {
-    Write-Host "`nThis is for adding to an existing replica set.`nThis will require connecting to the primary node.`n"
-    #$primaryPort = Read-Host "Port that mongo is using on this machine"
-    #$primaryNode = "$env:COMPUTERNAME" + ":" + "$primaryPort"
-    $primaryNode = Get-Primary
-   
-    Write-Host "Use the Mongo shell that popped up to add nodes to your replica set.`n`nFor each node type:`n`trs.add(""computername:port"")`nClose the shell when done by typing: exit."
-    
-    Start-Process -FilePath "$mongoShell" -ArgumentList ($primaryNode) -WindowStyle Normal -Verb RunAs -Wait
 
-}
 
 Function Load-MongoShell {
     $primaryNode = Get-Primary
@@ -171,25 +165,69 @@ db.createUser(
     Invoke-Expression -Command "cmd /c $block"
 }
 
-Function Remove-FromReplica { # remove nodes from replica
+Function Add-ToReplica { # add a node to the initated replica set
+    Write-Host "`nThis is for adding to an existing replica set.`nThis will require connecting to the primary node.`n"
+    
     $primaryNode = Get-Primary
-
-    Write-Host "`nRemove a Mongo node from the replica set.`nOnly run this from the Primary node`n"
-    Write-Host "Use the Mongo shell that popped up to remove nodes from your replica set.`n`nFor each node type:`n`trs.remove(""computername:port"")`n`nIMPORTANT: The node:port variable is case sensitive to what is in the replica set configuration.`n`nClose the shell when done by typing: exit."
+    $server = $primaryNode.Split(":")[0]
+    $port = $primaryNode.Split(":")[1]
+    $nodeString = "--host $server --port $port"
+   
     Write-Host "Connected to primary node: $primaryNode"
+    Write-Host "IMPORTANT: The node:port string specificed below is extremely case sensitive."
+    $newReplicaNode = Read-Host "`nNew node's computername:port" # get node to be added
 
-    Start-Process -FilePath "$mongoShell" -ArgumentList ($primaryNode) -WindowStyle Normal -Verb RunAs -Wait
+    # create javascript file to run command
+    $addReplicaJS = "$defaultRoot\addReplica.js"
+    New-Item -Path $addReplicaJS -ItemType File -Confirm:$false -Force # create the javascript file
+    "rs.add(""$newReplicaNode"")" | Set-Content -Path $addReplicaJS # add the replica set command to it with server:port parameter
+
+    Write-Log "Adding node: $newReplicaNode to replica set: $rsName..."
+    $block ="""$mongoShell"" $nodeString '$javaScript'"
+    $result = Invoke-Expression -Command "cmd /c $block"
+
+    Write-Log "Issued command to add node to replica set: $newReplicaNode. `nCheck replica config for confirmation"
+    Remove-Item -Path $addReplicaJS -Confirm:$false -Force # delete the file
+    $throwAway = Read-Host "Press ENTER to continue"
+}
+
+Function Remove-FromReplica {
+    Write-Host "`nThis is for removing a replica set member node from the replica set.`nThis will require connecting to the primary node.`n"
+    
+    $primaryNode = Get-Primary
+    $server = $primaryNode.Split(":")[0]
+    $port = $primaryNode.Split(":")[1]
+    $nodeString = "--host $server --port $port"
+   
+    Write-Host "Connected to primary node: $primaryNode"
+    Write-Host "IMPORTANT: The node:port string specificed below is extremely case sensitive."
+    $newReplicaNode = Read-Host "`nNode to remove computername:port" # get node to be added
+
+    # create javascript file to run command
+    $addReplicaJS = "$defaultRoot\removeReplica.js"
+    New-Item -Path $addReplicaJS -ItemType File -Confirm:$false -Force # create the javascript file
+    "rs.remove(""$newReplicaNode"")" | Set-Content -Path $addReplicaJS # add the replica set command to it with server:port parameter
+
+    Write-Log "Removing node: $newReplicaNode from replica set: $rsName..."
+    $block ="""$mongoShell"" $nodeString '$javaScript'"
+    $result = Invoke-Expression -Command "cmd /c $block"
+
+    Write-Log "Issued command to remove node from replica set: $newReplicaNode. `nCheck replica config for confirmation"
+    Remove-Item -Path $addReplicaJS -Confirm:$false -Force # delete the file
+    $throwAway = Read-Host "Press ENTER to continue" 
 }
 
 Function Get-ReplicaStatus { # retrieve the status of the replica
     param($wait=$false, $node=$currentNode)
 
     Write-Host "Current node: $node"
-    If ($node -ne ""){
+    If ($node -ne "" -or $node -ne $null){
+        $node = "$env:COMPUTERNAME" + ":" + "27017"
         $server = $node.Split(":")[0]
         $port = $node.Split(":")[1]
         $nodeString = "--host $server --port $port"
     }
+
     Write-Host "`nRetrieving replica status...`n"
     $params = @("rs.status()") # "localhost:$port/admin", 
     $block ="""$mongoShell"" $nodeString --eval '$params'"
@@ -308,7 +346,7 @@ Function Create-ScheduledBackup { # creates Windows scheduled task to backup
 
     # copy over vbs script that calls the powershell script with admin priveleges
     Copy-Item -Path $backupTaskScript -Destination $backupDir -Confirm:$false -Force
-    (Get-Content $newBackupTaskScript) -replace "SCRIPTHERE",$newBackupScriptPath -replace "PORTHERE",$prt | Set-Content $newBackupTaskScript
+    (Get-Content $newBackupTaskScript) -replace "SCRIPTHERE",$newBackupScriptPath -replace "PORTHERE",$prt | Set-Content $newBackupTaskScript # modify the .vbs script to have to correct .ps1 script and port
     
     $action = New-ScheduledTaskAction -Execute "C:\Windows\System32\cscript.exe" -Argument """$newBackupTaskScript"""
     
@@ -334,7 +372,7 @@ Function Get-Primary { # gets replica set stats and determines the primary
     }
     $primary = $primary -replace """name"" : """,""  -replace """," -replace "	",""
     $currentPrimary = $primary
-    Write-host "Primary identified as: $primary"
+    Write-host "`nPrimary identified as: $primary"
     return $primary
 }
 
