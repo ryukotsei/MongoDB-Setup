@@ -165,55 +165,56 @@ db.createUser(
     Invoke-Expression -Command "cmd /c $block"
 }
 
-Function Add-ToReplica { # add a node to the initated replica set
-    Write-Host "`nThis is for adding to an existing replica set.`nThis will require connecting to the primary node.`n"
-    
+Function Run-JavaScript { # run any javascript
+    param($command)
+
+    # get dat primary node!
     $primaryNode = Get-Primary
     $server = $primaryNode.Split(":")[0]
     $port = $primaryNode.Split(":")[1]
     $nodeString = "--host $server --port $port"
-   
     Write-Host "Connected to primary node: $primaryNode"
-    Write-Host "IMPORTANT: The node:port string specificed below is extremely case sensitive."
-    $newReplicaNode = Read-Host "`nNew node's computername:port" # get node to be added
 
-    # create javascript file to run command
-    $addReplicaJS = "$defaultRoot\addReplica.js"
-    New-Item -Path $addReplicaJS -ItemType File -Confirm:$false -Force # create the javascript file
-    "rs.add(""$newReplicaNode"")" | Set-Content -Path $addReplicaJS # add the replica set command to it with server:port parameter
+    # do the thing where we type into a file and run it as a script thing to do stuff
+    $tempJS = "$defaultRoot\tempJS.js"
+    New-Item -Path $tempJS -ItemType File -Confirm:$false -Force | Out-Null # create the javascript file
+    $command | Set-Content -Path $tempJS # add the replica set command to it with server:port parameter
 
-    Write-Log "Adding node: $newReplicaNode to replica set: $rsName..."
-    $block ="""$mongoShell"" $nodeString '$javaScript'"
+    Write-Log "`nExecuting command as Javascript: $command"
+    $block ="""$mongoShell"" $nodeString '$tempJS'"
     $result = Invoke-Expression -Command "cmd /c $block"
 
-    Write-Log "Issued command to add node to replica set: $newReplicaNode. `nCheck replica config for confirmation"
-    Remove-Item -Path $addReplicaJS -Confirm:$false -Force # delete the file
+    Remove-Item -Path $tempJS -Confirm:$false -Force # delete the file
+
+}
+
+Function Add-ToReplica { # add a node to the initated replica set
+    Write-Host "`nThis is for adding to an existing replica set.`nThis will require connecting to the primary node.`n"
+    Write-Host "IMPORTANT: The node:port string specificed below is extremely case sensitive."
+
+    $replicaNode = Read-Host "`nNew node's computername:port" # get node to be added
+
+    Write-Log "`nAdding node: $replicaNode to replica set: $rsName..."
+
+    $jsCommand = "rs.add(""$replicaNode"")"
+
+    Run-JavaScript -command $jsCommand
+       
+    Write-Log "`nIssued command to add node to replica set: $replicaNode `nCheck replica config for confirmation"
     $throwAway = Read-Host "Press ENTER to continue"
 }
 
 Function Remove-FromReplica {
     Write-Host "`nThis is for removing a replica set member node from the replica set.`nThis will require connecting to the primary node.`n"
-    
-    $primaryNode = Get-Primary
-    $server = $primaryNode.Split(":")[0]
-    $port = $primaryNode.Split(":")[1]
-    $nodeString = "--host $server --port $port"
-   
-    Write-Host "Connected to primary node: $primaryNode"
     Write-Host "IMPORTANT: The node:port string specificed below is extremely case sensitive."
-    $newReplicaNode = Read-Host "`nNode to remove computername:port" # get node to be added
 
-    # create javascript file to run command
-    $addReplicaJS = "$defaultRoot\removeReplica.js"
-    New-Item -Path $addReplicaJS -ItemType File -Confirm:$false -Force # create the javascript file
-    "rs.remove(""$newReplicaNode"")" | Set-Content -Path $addReplicaJS # add the replica set command to it with server:port parameter
+    $replicaNode = Read-Host "`nNode to remove computername:port" # get node to be removed
+    $jsCommand = "rs.remove(""$replicaNode"")"
 
-    Write-Log "Removing node: $newReplicaNode from replica set: $rsName..."
-    $block ="""$mongoShell"" $nodeString '$javaScript'"
-    $result = Invoke-Expression -Command "cmd /c $block"
+    Write-Log "`nRemoving node: $replicaNode from replica set: $rsName..."
+    Run-JavaScript -command $jsCommand
 
-    Write-Log "Issued command to remove node from replica set: $newReplicaNode. `nCheck replica config for confirmation"
-    Remove-Item -Path $addReplicaJS -Confirm:$false -Force # delete the file
+    Write-Log "`nIssued command to remove node from replica set: $replicaNode `nCheck replica config for confirmation"
     $throwAway = Read-Host "Press ENTER to continue" 
 }
 
@@ -518,6 +519,7 @@ $global:mongoShell = Join-Path -Path $mongoRoot -ChildPath "mongo.exe" # shell m
 $global:mongoBackup = Join-Path -Path $mongoRoot -ChildPath "mongodump.exe"
 $global:mongoRestore = Join-Path -Path $mongoRoot -ChildPath "mongorestore.exe"
 $global:backupDir =  Join-Path -Path $defaultRoot -ChildPath "backups"
+$global:replicaLimit = $false # tagged as true when get-nodes finds 7 or more nodes in the replica set as
 
 $global:keyFile = "$scriptDir\keyfile"
 $global:key = "F823589A578B5613M9656J585ED84"
