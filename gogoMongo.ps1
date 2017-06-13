@@ -296,17 +296,21 @@ Function Create-AutoBackup { # creates Windows scheduled task to backup
     }
 
     Confirm-Dir -dir $backupDir # setup/confirm backups root dir
-    $newBackupScriptPath = Join-Path -Path $backupDir -childPath $backupScriptName
-    If (!(Test-Path -Path $newBackupScriptPath )) { # move backup script to local backups root dir
-        Copy-Item -Path $autoBackupScript -Destination $backupDir -Confirm:$false -Force
+    $newBackupScriptPath = Join-Path -Path $backupDir -childPath $backupScriptName # .ps1
+    $newBackupTaskScript = Join-Path -Path $backupDir -ChildPath $backupTaskScriptName # .vbs
+    If (!(Test-Path -Path $newBackupScriptPath )) { # move backup ps1 script to local backups root dir
+        Copy-Item -Path $backupScript -Destination $backupDir -Confirm:$false -Force
     }
+    # copy over vbs script that calls the powershell script with admin priveleges
+    Copy-Item -Path $backupTaskScript -Destination $backupDir -Confirm:$false -Force
+    (Get-Content $newBackupTaskScript) -replace "SCRIPTHERE",$newBackupScriptPath -replace "PORTHERE",$prt | Set-Content $newBackupTaskScript
 
     Write-Host "`nThis will setup the mongo DB to automatically backup daily. You can change these settings at any time under Windows Task Scheduler."
     Write-Host "This script will setup the backups to happen daily.`nTask name: $taskName"
     $prt = Read-Host "Mongo node port"
     $time = Read-Host "Enter the time of day should we backup (e.g. 3:30am)"
     
-    $action = New-ScheduledTaskAction -Execute "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -NoProfile -Command "“& '$newBackupScriptPath' '-port $prt'"""
+    $action = New-ScheduledTaskAction -Execute "cscript.exe" -Argument $newBackupTaskScript
     
 
     $trigger =  New-ScheduledTaskTrigger -Daily -At $time
@@ -465,7 +469,9 @@ $global:defaultRoot = "C:\MongoOthers"
 $global:consoleOutput = $true # output logging to console
 $global:rsName = "rs0" # replicaSet name
 $global:backupScriptName = "gogoMDBBackup.ps1"
+$global:backupTaskScriptName = "backupMongo.vbs"
 $global:autoBackupScript = Join-Path -Path $scriptDir -ChildPath $backupScriptName
+$global:backupTaskScript = Join-Path -Path $scriptDir -ChildPath $backupTaskScriptName
 $taskName = "MongoDB Backup"
 
 # variables - leave!
