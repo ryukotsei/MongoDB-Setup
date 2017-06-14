@@ -190,7 +190,11 @@ Function Run-JavaScript { # run any javascript
 
 Function Add-ToReplica { # add a node to the initated replica set
     Write-Host "`nThis is for adding to an existing replica set.`nThis will require connecting to the primary node.`n"
-    Write-Host "IMPORTANT: The node:port string specificed below is extremely case sensitive."
+    Write-Host "Retrieving exiting nodes...`n"
+
+    Print-ReplicaStatus
+    
+    Write-Host "`nIMPORTANT: The node:port string specificed below is extremely case sensitive."
 
     $replicaNode = Read-Host "`nNew node's computername:port" # get node to be added
 
@@ -204,9 +208,21 @@ Function Add-ToReplica { # add a node to the initated replica set
     $throwAway = Read-Host "Press ENTER to continue"
 }
 
+Function Print-ReplicaStatus { # show more formatted view of the replica members
+    $nodes = Get-Nodes
+    $headers = ""
+    $nodes | GM | Where MemberType -eq "NoteProperty" | Select-Object Name | ForEach-Object {$headers += $_.Name + "      "}
+    Write-Host $headers
+    $nodes | ForEach-Object {Write-Host $_.Id "   " $_.NodeName "   " $_.State}
+}
+
 Function Remove-FromReplica {
     Write-Host "`nThis is for removing a replica set member node from the replica set.`nThis will require connecting to the primary node.`n"
-    Write-Host "IMPORTANT: The node:port string specificed below is extremely case sensitive."
+    Write-Host "Retrieving exiting nodes...`n"
+
+    Print-ReplicaStatus
+
+    Write-Host "`nIMPORTANT: The node:port string specificed below is extremely case sensitive."
 
     $replicaNode = Read-Host "`nNode to remove computername:port" # get node to be removed
     $jsCommand = "rs.remove(""$replicaNode"")"
@@ -215,6 +231,25 @@ Function Remove-FromReplica {
     Run-JavaScript -command $jsCommand
 
     Write-Log "`nIssued command to remove node from replica set: $replicaNode `nCheck replica config for confirmation"
+    $throwAway = Read-Host "Press ENTER to continue" 
+}
+
+Function Add-Arbiter { # add a node to a replica as an arbiter
+    Write-Host "`n     ----------- ADD ARBITER - READ THIS ! -----------"
+    Write-Host "`nThis will add a node to the replica set as an arbiter. Arbiter nodes are added when you have an even # of nodes in a replica set to break ties."
+    Write-Host "`nIf your replica set has an even number of nodes and you are done deploying nodes:`nAdd a second node to one of your machines and use this to add it to the replica set as an arbiter.`n"
+    Write-Host "Remove the arbiter like another replica set member if you choose to add another node in the future. Adding another node would make the set have an even number."
+    Write-Host "Retrieving exiting nodes...`n"
+    Print-ReplicaStatus
+    Write-Host "`nIMPORTANT: The node:port string specificed below is extremely case sensitive."
+
+    $replicaNode = Read-Host "`nNode to add as arbiter computername:port" # get node to be removed
+    $jsCommand = "rs.addArb(""$replicaNode"")"
+
+    Write-Log "`nAdding arbiter node: $replicaNode to replica set: $rsName..."
+    Run-JavaScript -command $jsCommand
+
+    Write-Log "`nIssued command to add node as arbiter to replica set: $replicaNode `nCheck replica config for confirmation"
     $throwAway = Read-Host "Press ENTER to continue" 
 }
 
@@ -280,7 +315,6 @@ Function Get-ReplicaConfig { # retrieve replica configuration
         Set-Variable -Name currentNode -Value $altNode -Scope Global
         $result = Get-ReplicaStatus -node $altNode
         Return $result
-
     }
 
     Set-Variable -Name currentNode -Value $altNode -Scope Global
@@ -290,7 +324,6 @@ Function Get-ReplicaConfig { # retrieve replica configuration
     }
     Else {Return $result}
 }
-
 
 Function Initiate-Replica { # initiates the replica
 
@@ -384,7 +417,7 @@ Function Get-Nodes { # gets replica set stats and determines the primary
     #$allNodes = @{}
     Write-Host "Evaluating nodes..."
     $allNodes = @()
-    $rsStatus | ForEach-Object{g
+    $rsStatus | ForEach-Object{
         If ($_ -match """_id"" : ") {
             $nodeID = $_ -replace """_id"" : ",""  -replace "," -replace "	",""
         }
@@ -428,13 +461,14 @@ Function Generate-ConnectionString { # build and output connection string for th
 Function Get-OptionList { # &"MyFunctionName" $arg1 $arg2
     $options = [ordered]@{"New Mongo node                    " = 1; `
                           "Initiate replica set              " = 2; `
-                          "Add server to replica set         " = 3; `
-                          "Remove node from replica set      " = 4; `
-                          "View replica status               " = 5; `
-                          "View replica config               " = 6; `
-                          "Load MongoShell                   " = 7; `
-                          "Setup automatic backups           " = 8; `
-                          "Restore backup from date          " = 9; `
+                          "Add node to replica set           " = 3; `
+                          "Add arbiter to replica set        " = 4; `
+                          "Remove node from replica set      " = 5; `
+                          "View replica status               " = 6; `
+                          "View replica config               " = 7; `
+                          "Load MongoShell                   " = 8; `
+                          "Setup automatic backups           " = 9; `
+                          "Restore backup from date          " = "r"; `
                           "Generate connection string        " = "c"; `
                           "Exit                              " = "x"}
 
@@ -460,26 +494,30 @@ Function Get-OptionList { # &"MyFunctionName" $arg1 $arg2
         Get-OptionList # return to options
     }
     ElseIf ($slct -eq "4") {
-        Remove-FromReplica
+        Add-Arbiter
         Get-OptionList # return to options
     }
     ElseIf ($slct -eq "5") {
-        Get-ReplicaConfig -wait $true
+        Remove-FromReplica
         Get-OptionList # return to options
     }
     ElseIf ($slct -eq "6") {
-        Get-ReplicaStatus -wait $true
+        Get-ReplicaConfig -wait $true
         Get-OptionList # return to options
     }
     ElseIf ($slct -eq "7") {
-        Load-MongoShell
+        Get-ReplicaStatus -wait $true
         Get-OptionList # return to options
     }
     ElseIf ($slct -eq "8") {
+        Load-MongoShell
+        Get-OptionList # return to options
+    }
+    ElseIf ($slct -eq "9") {
         Create-ScheduledBackup
         Get-OptionList # return to options
     }
-    ElseIf ($slct -eq 9) {
+    ElseIf ($slct.ToLower() -eq "r") {
         Restore-Backup
         Exit # done
     }
