@@ -84,9 +84,7 @@ Function Create-User { # not working yet
 }
 
 Function Authenticate { # not working yet
-
     #mongo --port 27017 -u "myUserAdmin" -p "abc123" --authenticationDatabase "admin"
-
 }
 
 
@@ -188,35 +186,41 @@ Function Run-JavaScript { # run any javascript
 
 }
 
-Function Add-ToReplica { # add a node to the initated replica set
-    Write-Host "`nThis is for adding to an existing replica set.`nThis will require connecting to the primary node.`n"
-    Write-Host "Retrieving exiting nodes...`n"
-
-    Print-ReplicaStatus
-    
-    Write-Host "`nIMPORTANT: The node:port string specificed below is extremely case sensitive."
-
-    $replicaNode = Read-Host "`nNew node's computername:port" # get node to be added
-
-    Write-Log "`nAdding node: $replicaNode to replica set: $rsName..."
-
-    $jsCommand = "rs.add(""$replicaNode"")"
-
-    Run-JavaScript -command $jsCommand
-       
-    Write-Log "`nIssued command to add node to replica set: $replicaNode `nCheck replica config for confirmation"
-    $throwAway = Read-Host "Press ENTER to continue"
-}
-
 Function Print-ReplicaStatus { # show more formatted view of the replica members
-    $nodes = Get-Nodes
+    $nodes = Get-Nodes -quiet $true
     $headers = ""
     $nodes | GM | Where MemberType -eq "NoteProperty" | Select-Object Name | ForEach-Object {$headers += $_.Name + "      "}
     Write-Host $headers
     $nodes | ForEach-Object {Write-Host $_.Id "   " $_.NodeName "   " $_.State}
 }
 
-Function Remove-FromReplica {
+Function Evaluate-NodeCount { # determine if there is an even number of nodes. If so, notify that an arbiter should be added
+    $nodes = Get-Nodes
+    $nodeCount = $nodes.Count
+    If ($nodeCount%2 -eq 0){
+        Write-Host "`nNOTICE: You have an even amount of nodes: $nodeCount. If this is your final node, please create another and add it to the replica set as an arbiter."
+    }
+}
+
+Function Add-ToReplica { # add a node to the initated replica set
+    Write-Host "`nThis is for adding to an existing replica set.`nThis will require connecting to the primary node.`n"
+    Write-Host "Retrieving existing nodes...`n"
+    Print-ReplicaStatus
+    
+    Write-Host "`nIMPORTANT: The node:port string specificed below is extremely case sensitive."
+    $replicaNode = Read-Host "`nNew node's computername:port" # get node to be added
+
+    Write-Log "`nAdding node: $replicaNode to replica set: $rsName..."
+    $jsCommand = "rs.add(""$replicaNode"")"
+
+    Run-JavaScript -command $jsCommand
+       
+    Write-Log "`nIssued command to add node to replica set: $replicaNode `nCheck replica config for confirmation"
+    Evaluate-NodeCount
+    $throwAway = Read-Host "Press ENTER to continue"
+}
+
+Function Remove-FromReplica { # remove node from replica
     Write-Host "`nThis is for removing a replica set member node from the replica set.`nThis will require connecting to the primary node.`n"
     Write-Host "Retrieving exiting nodes...`n"
 
@@ -231,6 +235,7 @@ Function Remove-FromReplica {
     Run-JavaScript -command $jsCommand
 
     Write-Log "`nIssued command to remove node from replica set: $replicaNode `nCheck replica config for confirmation"
+    Evaluate-NodeCount
     $throwAway = Read-Host "Press ENTER to continue" 
 }
 
@@ -250,13 +255,14 @@ Function Add-Arbiter { # add a node to a replica as an arbiter
     Run-JavaScript -command $jsCommand
 
     Write-Log "`nIssued command to add node as arbiter to replica set: $replicaNode `nCheck replica config for confirmation"
+    Evaluate-NodeCount
     $throwAway = Read-Host "Press ENTER to continue" 
 }
 
 Function Get-ReplicaStatus { # retrieve the status of the replica
-    param($wait=$false, $node=$currentNode)
+    param($wait=$false, $node=$currentNode,$quiet=$false)
 
-    Write-Host "Current node: $node"
+    If ($quiet -eq $false) {Write-Host "Current node: $node"}
     If ($node -ne "" -or $node -ne $null){
         $node = "$env:COMPUTERNAME" + ":" + "27017"
         $server = $node.Split(":")[0]
@@ -264,7 +270,7 @@ Function Get-ReplicaStatus { # retrieve the status of the replica
         $nodeString = "--host $server --port $port"
     }
 
-    Write-Host "`nRetrieving replica status...`n"
+    If ($quiet -eq $false) {Write-Host "`nRetrieving replica status...`n"}
     $params = @("rs.status()") # "localhost:$port/admin", 
     $block ="""$mongoShell"" $nodeString --eval '$params'"
     # example: Invoke-Expression -Command "cmd /c ""C:\Program Files\MongoDB\Server\3.4\bin\mongo.exe"" --host srv-cm-3 --port 27019 --eval 'rs.status()'"
@@ -277,10 +283,9 @@ Function Get-ReplicaStatus { # retrieve the status of the replica
         Write-Host "Unable to retrieve node status from the default local node."
         $altNode = Read-Host "Please Input an alternate NODE:PORT"
         Set-Variable -Name currentNode -Value $altNode -Scope Global
-        $result = Get-ReplicaStatus -node $altNode
+        $result = Get-ReplicaStatus -node $altNode -quiet $quiet
         #$currentNode = $altNode
         Return $result
-
     }
     Set-Variable -Name currentNode -Value $altNode -Scope Global
     If($wait -eq $true){ # print read out and wait
@@ -313,7 +318,7 @@ Function Get-ReplicaConfig { # retrieve replica configuration
         $altNode = Read-Host "Please Input an alternate NODE:PORT"
         $currentNode = $altNode
         Set-Variable -Name currentNode -Value $altNode -Scope Global
-        $result = Get-ReplicaStatus -node $altNode
+        $result = Get-ReplicaStatus -node $altNode 
         Return $result
     }
 
@@ -394,7 +399,7 @@ Function Create-ScheduledBackup { # creates Windows scheduled task to backup
 }
 
 Function Get-Primary { # gets replica set stats and determines the primary
-    $rsStatus = Get-ReplicaStatus
+    $rsStatus = Get-ReplicaStatus -quiet $quiet
     Write-Host "Searching for primary in replica set..."
     $rsStatus | ForEach-Object {
         If ($_ -match """name"" : "){
@@ -411,11 +416,11 @@ Function Get-Primary { # gets replica set stats and determines the primary
 }
 
 Function Get-Nodes { # gets replica set stats and determines the primary
-    param($altNode="")
-    $rsStatus = Get-ReplicaStatus -node $altNode
+    param($altNode="",$quiet=$false)
+    $rsStatus = Get-ReplicaStatus -node $altNode -quiet $quiet
     
     #$allNodes = @{}
-    Write-Host "Evaluating nodes..."
+    If ($quiet -eq $false) {Write-Host "Evaluating nodes..."}
     $allNodes = @()
     $rsStatus | ForEach-Object{
         If ($_ -match """_id"" : ") {
