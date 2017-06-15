@@ -205,7 +205,7 @@ Function Add-ToReplica { # add a node to the initated replica set
     Write-Host "Retrieving existing nodes...`n"
     Print-ReplicaStatus
     
-    Write-Host "`nIMPORTANT: The node:port string specificed below is extremely case sensitive."
+    Write-Host "`nIMPORTANT: The node:port string specificed below is case sensitive."
     $replicaNode = Read-Host "`nNew node's computername:port" # get node to be added
 
     Write-Log "`nAdding node: $replicaNode to replica set: $rsName..."
@@ -224,7 +224,7 @@ Function Remove-FromReplica { # remove node from replica
 
     Print-ReplicaStatus
 
-    Write-Host "`nIMPORTANT: The node:port string specificed below is extremely case sensitive."
+    Write-Host "`nIMPORTANT: The node:port string specificed below is case sensitive."
 
     $replicaNode = Read-Host "`nNode to remove computername:port" # get node to be removed
     $jsCommand = "rs.remove(""$replicaNode"")"
@@ -244,7 +244,7 @@ Function Add-Arbiter { # add a node to a replica as an arbiter
     Write-Host "Remove the arbiter like another replica set member if you choose to add another node in the future. Adding another node would make the set have an even number."
     Write-Host "Retrieving exiting nodes...`n"
     Print-ReplicaStatus
-    Write-Host "`nIMPORTANT: The node:port string specificed below is extremely case sensitive."
+    Write-Host "`nIMPORTANT: The node:port string specificed below is case sensitive."
 
     $replicaNode = Read-Host "`nNode to add as arbiter computername:port" # get node to be removed
     $jsCommand = "rs.addArb(""$replicaNode"")"
@@ -439,10 +439,41 @@ Function Get-Nodes { # gets replica set stats and determines the primary
             $allNodes += $nodes
         }
     }
-
     #$node = Select-Node -nodeList $allNodes
-
     Return $allNodes
+}
+
+Function Get-InitialCurrentNode { # try to find a node on the local computer
+    $nodeFolders = Get-Item -Path "$defaultRoot\*\log.log"
+    If ($nodeFolders.Count -le 0){Return ""} # no nodes found
+
+    $logFile = $nodeFolders[0].FullName  # ENSURE IT finds the last process start in the log
+    $logContent = Get-Content $logFile
+    $logContent | ForEach-Object {
+        If ($_ -match "MongoDB starting"){
+            $nodeLine = $_
+            #Break
+        }
+    }
+    $nodeLine.split(" ") | ForEach-Object {
+        If ($_ -match "port="){
+            $initialPort = $_ -replace "port=",""
+            
+        }
+        If ($_ -match "pid=") {
+            $processID = $_ -replace "pid=",""
+        }
+    }
+    $processStatus = Get-Process -Id $processID -ErrorAction ignore
+    If ($processStatus -eq $null) {
+        Write-host "processs $processStatus not running. will get this working but i have to be at your meeting in 2 minutes!"
+    }
+
+
+    $initialNode = $env:COMPUTERNAME + ":" + $initialPort
+
+
+    return $initialNode
 }
  
 Function Generate-ConnectionString { # build and output connection string for the replica and its nodes
@@ -454,19 +485,18 @@ Function Generate-ConnectionString { # build and output connection string for th
     $hostNum = 1
     $nodes | ForEach-Object { # construct connetion string
         $node = $_.NodeName
-        
         $connectionStr += "$node,"
-        
     }
+
     $connectionStr = $connectionStr.Substring(0,$connectionStr.Length-1)
-    $connectionStr += "/?replicaSet=$rsName" # finalize
+    $connectionStr += "/?replicaSet=$rsName&w=1&connectTimeoutMS=2000" # finalize
     
     Write-Log "`nConnection string:`n`t$connectionStr"
     $throwAway = Read-Host "`nPress ENTER to continue"
 }
 
 
-Function Get-OptionList { # &"MyFunctionName" $arg1 $arg2
+Function Get-OptionList { # &"MyFunctionNameb" $arg1 $arg2
     $options = [ordered]@{"New Mongo node                    " = 1; `
                           "Initiate replica set              " = 2; `
                           "Add node to replica set           " = 3; `
@@ -552,10 +582,8 @@ Function Get-OptionList { # &"MyFunctionName" $arg1 $arg2
 
 # variables - change to enviro
 
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$global:defaultRoot = "C:\MongoOthers"
-$global:consoleOutput = $true # output logging to console
-$global:rsName = "rs0" # replicaSet name
+$scriptDir = Split-Path -Parent $MyInvoc leOutput = $true # output logging to console
+$global:rsName = "dispatchmap" # replicaSet name
 $global:backupScriptName = "gogoMDBBackup.ps1"
 $global:backupTaskScriptName = "backupMongo.vbs"
 $global:backupScript = Join-Path -Path $scriptDir -ChildPath $backupScriptName
@@ -575,12 +603,17 @@ $global:replicaLimit = $false # tagged as true when get-nodes finds 7 or more no
 $global:keyFile = "$scriptDir\keyfile"
 $global:key = "F823589A578B5613M9656J585ED84"
 $global:currentPrimary = ""
-New-Variable -Name "currentNode" -Visibility Public -Value "" -Option AllScope
-#$global:currentNode = ""
+
+$localNode = Get-InitialCurrentNode # find the local node by searching the defaultRoot for a service's log file content
+If ($currentNode -eq $null) { # so we dont get an error after stopping the script and running it again
+    New-Variable -Name "currentNode" -Visibility Public -Value $localNode -Option AllScope
+}
+
 # configure as desired
 
 
 Write-Host "`nMongoDB Setup Script!`nComputerName: $env:COMPUTERNAME"
+Write-Host "Local node: $currentNode"
 Write-Host "Log path: $logFile"
 
 Get-OptionList
@@ -588,3 +621,20 @@ Get-OptionList
 Exit
 
 # Fin
+
+
+#NOTES:
+
+
+# only connection string
+# default write concern  w=1
+# mongodb://lp-cleppanen-2:27017,lp-cleppanen-2:27018,dev-chartisw10:27017/?safe=true&ReplicaSet=rs0&w=1&connectTimeoutMS=2000
+
+# connect time out for driver: 3 sec?
+
+
+# parameterize the backup location in the setup backup auto function and the restore function
+
+
+# add environemntal variable lookup for service directory, if exist then replace
+# variable: %GC_MONGO_HOME%
