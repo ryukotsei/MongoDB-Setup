@@ -321,7 +321,7 @@ Function Get-ReplicaConfig { # retrieve replica configuration
         $altNode = Read-Host "Please Input an alternate NODE:PORT"
         $currentNode = $altNode
         Set-Variable -Name currentNode -Value $altNode -Scope Global
-        $result = Get-ReplicaStatus -node $altNode -
+        $result = Get-ReplicaStatus -node $altNode
         Return $result
     }
 
@@ -402,8 +402,9 @@ Function Create-ScheduledBackup { # creates Windows scheduled task to backup
 }
 
 Function Get-Primary { # gets replica set stats and determines the primary
+    param($quiet=$false)
     $rsStatus = Get-ReplicaStatus -quiet $quiet
-    Write-Host "Searching for primary in replica set..."
+    If ($quiet -ne $true) {Write-Host "Searching for primary in replica set..."}
     $rsStatus | ForEach-Object {
         If ($_ -match """name"" : "){
             $nodeStored = $_
@@ -414,7 +415,7 @@ Function Get-Primary { # gets replica set stats and determines the primary
     }
     $primary = $primary -replace """name"" : """,""  -replace """," -replace "	",""
     $currentPrimary = $primary
-    Write-host "`nPrimary identified as: $primary"
+    If ($quiet -ne $true) {Write-host "`nPrimary identified as: $primary"}
     return $primary
 }
 
@@ -444,36 +445,39 @@ Function Get-Nodes { # gets replica set stats and determines the primary
 }
 
 Function Get-InitialCurrentNode { # try to find a node on the local computer
+    $initialNode = ""
+    Write-Host "Searching for an available local node..."
     $nodeFolders = Get-Item -Path "$defaultRoot\*\log.log"
     If ($nodeFolders.Count -le 0){Return ""} # no nodes found
 
-    $logFile = $nodeFolders[0].FullName  # ENSURE IT finds the last process start in the log
-    $logContent = Get-Content $logFile
-    $logContent | ForEach-Object {
-        If ($_ -match "MongoDB starting"){
-            $nodeLine = $_
-            #Break
+    $logFiles = $nodeFolders.FullName  # ENSURE IT finds the last process start in the log
+    # cant get out of a foreach-object loop in powershell for some reason so i wrote the below workaround
+    $logDef = 0
+    Do {
+        $logContent = Get-Content $logFiles[$logDef]
+        $logContent | ForEach-Object {
+            If ($_ -match "MongoDB starting"){
+                $nodeLine = $_
+                Return
+            }
         }
-    }
-    $nodeLine.split(" ") | ForEach-Object {
-        If ($_ -match "port="){
-            $initialPort = $_ -replace "port=",""
-            
+        $nodeLine.split(" ") | ForEach-Object {
+            If ($_ -match "port="){ # log the port
+                $initialPort = $_ -replace "port=",""
+            }
+            If ($_ -match "pid=") { # log the process id
+                $processID = $_ -replace "pid=",""
+            }
         }
-        If ($_ -match "pid=") {
-            $processID = $_ -replace "pid=",""
+        $processStatus = Get-Process -Id $processID -ErrorAction Ignore
+        If ($processStatus -ne $null) { # is this process running? If so then send back the port
+            $initialNode = $env:COMPUTERNAME + ":" + $initialPort # found one!
+            $found = $true
         }
-    }
-    $processStatus = Get-Process -Id $processID -ErrorAction ignore
-    If ($processStatus -eq $null) {
-        Write-host "processs $processStatus not running. will get this working but i have to be at your meeting in 2 minutes!"
-    }
+        $logDef++
+    } Until (($found -eq $true) -or $logDef -eq ($logFiles.Count - 1))
 
-
-    $initialNode = $env:COMPUTERNAME + ":" + $initialPort
-
-
-    return $initialNode
+    Return $initialNode
 }
 
 Function Get-DefaultRoot {
@@ -586,7 +590,6 @@ Function Get-OptionList { # &"MyFunctionNameb" $arg1 $arg2
 # gogo Mongo DB!
 
 # variables - change to enviro
-
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $global:consoleOutput = $true # output logging to console
 $global:altRoot = "C:\MongoOthers"
@@ -614,13 +617,15 @@ $global:keyFile = "$scriptDir\keyfile"
 $global:key = "F823589A578B5613M9656J585ED84"
 $global:currentPrimary = ""
 
-$localNode = Get-InitialCurrentNode # find the local node by searching the defaultRoot for a service's log file content
+
 If ($currentNode -eq $null) { # so we dont get an error after stopping the script and running it again
+    $localNode = Get-InitialCurrentNode # find the local node by searching the defaultRoot for a service's log file content
     New-Variable -Name "currentNode" -Visibility Public -Value $localNode -Option AllScope
+    $currentPrimary = Get-Primary -quiet $true # now that we have found a local node that's part of the replica, we can use it to hop to the primary and set it as the de facto node
+    $currentNode = $currentPrimary 
 }
 
 # configure as desired
-
 
 Write-Host "`nMongoDB Setup Script!`nComputerName: $env:COMPUTERNAME"
 Write-Host "Local node: $currentNode"
@@ -633,19 +638,5 @@ Exit
 
 # Fin
 
-
 #NOTES:
-
-
-# only connection string
-# default write concern  w=1
-# mongodb://lp-cleppanen-2:27017,lp-cleppanen-2:27018,dev-chartisw10:27017/?safe=true&ReplicaSet=rs0&w=1&connectTimeoutMS=3000
-
-# connect time out for driver: 3 sec?
-
-
 # parameterize the backup location in the setup backup auto function and the restore function
-
-
-# add environemntal variable lookup for service directory, if exist then replace
-# variable: %GC_MONGO_HOME%
