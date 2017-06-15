@@ -543,7 +543,7 @@ Function Get-OptionList { # &"MyFunctionName" $arg1 $arg2
         Exit # done
     }
     Else {
-        Write-Host "Unknown option. Try again..."
+        Write-Host "Unknown selection. Try again..."
         Get-OptionList
     }
 }
