@@ -96,7 +96,8 @@ Function Restore-Backup { # restores to the primary only
     $backups = Get-ChildItem -Path $backupDir -Directory | Select-Object Name
     Write-Host "`nAvailable backup dates: "
     $backups.Name
-    $backupTime = Read-Host "`nWhich backup would you like?"
+    $backupTime = Read-Host "`nWhich backup would you like(blank to go back)?"
+    If ($backupTime -eq "") {Return}
     If ($backupTime -notin $backups.Name){
         Write-Host "Invalid backup choice. Try again."
         Restore-Backup -srvcName $srvcName -node $prt
@@ -623,6 +624,10 @@ $global:currentPrimary = ""
 If ($currentNode -eq $null) { # so we dont get an error after stopping the script and running it again
     $localNode = Get-InitialCurrentNode # find the local node by searching the defaultRoot for a service's log file content
     New-Variable -Name "currentNode" -Visibility Public -Value $localNode -Option AllScope
+    $currentPrimary = Get-Primary -quiet $true # now that we have found a local node that's part of the replica, we can use it to hop to the primary and set it as the de facto node
+    $currentNode = $currentPrimary 
+}
+Else {
     $currentPrimary = Get-Primary -quiet $true # now that we have found a local node that's part of the replica, we can use it to hop to the primary and set it as the de facto node
     $currentNode = $currentPrimary 
 }
