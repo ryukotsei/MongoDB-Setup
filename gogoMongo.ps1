@@ -155,7 +155,7 @@ db.createUser(
 
     
     Write-Host "Enabling authentication..."
-    $block ="""$mongoEXE"" --dbpath C:\MongoOthers\mongo1 --auth"
+    $block ="""$mongoEXE"" --dbpath $defaultRoot\$serviceName --auth"
     Invoke-Expression -Command "cmd /c $block"
 }
 
@@ -494,7 +494,7 @@ Function Generate-ConnectionString { # build and output connection string for th
     }
 
     $connectionStr = $connectionStr.Substring(0,$connectionStr.Length-1)
-    $connectionStr += "/?replicaSet=$rsName&w=1&connectTimeoutMS=2000" # finalize
+    $connectionStr += "/?replicaSet=$rsName&w=$writeConcern&connectTimeoutMS=$conTimeout" # finalize, write concern
     
     Write-Log "`nConnection string:`n`t$connectionStr"
     $throwAway = Read-Host "`nPress ENTER to continue"
@@ -597,6 +597,8 @@ $global:backupTaskScriptName = "backupMongo.vbs"
 $global:backupScript = Join-Path -Path $scriptDir -ChildPath $backupScriptName
 $global:backupTaskScript = Join-Path -Path $scriptDir -ChildPath $backupTaskScriptName
 $taskName = "MongoDB Backup"
+$writeConcern = 1 # write concern, 1 = wait for confirmation of write
+$conTimeout = "3000" # connection string write concern in milliseconds
 
 # variables - leave!
 $global:logFile = $scriptDir + "\scriptLog.log"
@@ -637,7 +639,7 @@ Exit
 
 # only connection string
 # default write concern  w=1
-# mongodb://lp-cleppanen-2:27017,lp-cleppanen-2:27018,dev-chartisw10:27017/?safe=true&ReplicaSet=rs0&w=1&connectTimeoutMS=2000
+# mongodb://lp-cleppanen-2:27017,lp-cleppanen-2:27018,dev-chartisw10:27017/?safe=true&ReplicaSet=rs0&w=1&connectTimeoutMS=3000
 
 # connect time out for driver: 3 sec?
 
