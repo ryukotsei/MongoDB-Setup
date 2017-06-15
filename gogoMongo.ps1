@@ -183,7 +183,7 @@ Function Run-JavaScript { # run any javascript
 }
 
 Function Print-ReplicaStatus { # show more formatted view of the replica members
-    param($wait=$false)
+    param($wait=$false,$quiet=$false)
     $nodes = Get-Nodes -quiet $true
     $headers = ""
     $nodes | GM | Where MemberType -eq "NoteProperty" | Select-Object Name | ForEach-Object {$headers += $_.Name + "      "}
@@ -274,7 +274,7 @@ Function Get-ReplicaStatus { # retrieve the status of the replica
     $params = @("rs.status()") # "localhost:$port/admin", 
     $block ="""$mongoShell"" $nodeString --eval '$params'"
     # example: Invoke-Expression -Command "cmd /c ""C:\Program Files\MongoDB\Server\3.4\bin\mongo.exe"" --host srv-cm-3 --port 27019 --eval 'rs.status()'"
-    write-host "Attempting connection: $block"
+    If ($quiet -eq $false) {Write-Host "Attempting connection: $block"}
     $result = Invoke-Expression -Command "cmd /c $block"
 
     $status = $result -match """ok"" : 1"
@@ -380,10 +380,11 @@ Function Create-ScheduledBackup { # creates Windows scheduled task to backup
     If (!(Test-Path -Path $newBackupScriptPath )) { # move backup ps1 script to local backups root dir
         Copy-Item -Path $backupScript -Destination $backupDir -Confirm:$false -Force
     }
-
+    Print-ReplicaStatus -quiet $true
     Write-Host "`nThis will setup the mongo DB to automatically backup daily. You can change these settings at any time under Windows Task Scheduler."
-    Write-Host "This script will setup the backups to happen daily.`nTask name: $taskName"
-    $prt = Read-Host "Mongo node port"
+    Write-Host "This script will setup the backups to happen daily.`nTask name: $taskName`n"
+    
+    $prt = Read-Host "Enter a local Mongo node port"
     $time = Read-Host "Enter the time of day should we backup (e.g. 3:30am)"
 
     # copy over vbs script that calls the powershell script with admin priveleges
