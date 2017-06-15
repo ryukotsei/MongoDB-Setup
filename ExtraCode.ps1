@@ -85,6 +85,7 @@ Function Replica-Configuration { # retrieve configuration details about the repl
     Write-Host "`nRetrieving replica configuration...`n"
     $params = @("rs.conf()") # "localhost:$port/admin", 
     $block ="""$mongoShell"" --eval '$params'"
+    write-Host $block
     Invoke-Expression -Command "cmd /c $block"
     $throwAway = Read-Host "`n Press ENTER to continue"
 }

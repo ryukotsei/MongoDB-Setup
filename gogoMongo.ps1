@@ -60,8 +60,6 @@ Function Create-Mongo {
 
 }
 
-
-
 Function Load-MongoShell {
     $primaryNode = Get-Primary
 
@@ -70,7 +68,6 @@ Function Load-MongoShell {
     
     Start-Process -FilePath "$mongoShell" -ArgumentList ($primaryNode) -WindowStyle Normal -Verb RunAs -Wait
 }
-
 
 Function Create-User { # not working yet
     $primary = Get-Primary
@@ -86,7 +83,6 @@ Function Create-User { # not working yet
 Function Authenticate { # not working yet
     #mongo --port 27017 -u "myUserAdmin" -p "abc123" --authenticationDatabase "admin"
 }
-
 
 Function Restore-Backup { # restores to the primary only
     param($srvcName=$null, $prt=$nulls)
@@ -187,11 +183,13 @@ Function Run-JavaScript { # run any javascript
 }
 
 Function Print-ReplicaStatus { # show more formatted view of the replica members
+    param($wait=$false)
     $nodes = Get-Nodes -quiet $true
     $headers = ""
     $nodes | GM | Where MemberType -eq "NoteProperty" | Select-Object Name | ForEach-Object {$headers += $_.Name + "      "}
     Write-Host $headers
     $nodes | ForEach-Object {Write-Host $_.Id "   " $_.NodeName "   " $_.State}
+    If ($wait -eq $true){$throwAway = Read-Host "`nPress Enter to continue"}
 }
 
 Function Evaluate-NodeCount { # determine if there is an even number of nodes. If so, notify that an arbiter should be added
@@ -261,20 +259,22 @@ Function Add-Arbiter { # add a node to a replica as an arbiter
 
 Function Get-ReplicaStatus { # retrieve the status of the replica
     param($wait=$false, $node=$currentNode,$quiet=$false)
-
-    If ($quiet -eq $false) {Write-Host "Current node: $node"}
-    If ($node -ne "" -or $node -ne $null){
+    
+    If ($node -eq "" -or $node -eq $null){
         $node = "$env:COMPUTERNAME" + ":" + "27017"
-        $server = $node.Split(":")[0]
-        $port = $node.Split(":")[1]
-        $nodeString = "--host $server --port $port"
+        Set-Variable -Name "currentNode" -Value $node -Scope Global
     }
-
+    $server = $node.Split(":")[0]
+    $port = $node.Split(":")[1]
+    $nodeString = "--host $server --port $port"
+    write-host "Initial node value: $node"
+    If ($quiet -eq $false) {Write-Host "Current node: $node"}
     If ($quiet -eq $false) {Write-Host "`nRetrieving replica status...`n"}
+
     $params = @("rs.status()") # "localhost:$port/admin", 
     $block ="""$mongoShell"" $nodeString --eval '$params'"
     # example: Invoke-Expression -Command "cmd /c ""C:\Program Files\MongoDB\Server\3.4\bin\mongo.exe"" --host srv-cm-3 --port 27019 --eval 'rs.status()'"
-
+    write-host "Attempting connection: $block"
     $result = Invoke-Expression -Command "cmd /c $block"
 
     $status = $result -match """ok"" : 1"
@@ -282,12 +282,15 @@ Function Get-ReplicaStatus { # retrieve the status of the replica
     If ($status.Count -le 0) {
         Write-Host "Unable to retrieve node status from the default local node."
         $altNode = Read-Host "Please Input an alternate NODE:PORT"
-        Set-Variable -Name currentNode -Value $altNode -Scope Global
-        $result = Get-ReplicaStatus -node $altNode -quiet $quiet
+        Set-Variable -Name "currentNode" -Value $altNode -Scope Global -Option AllScope -Confirm:$false -Force
+        #$global:currentNode = $altNode
+        Write-Host "New currentNode: $currentNode"
+        #$global:currentNode = $altNode
+        $result = Get-ReplicaStatus -quiet $quiet
         #$currentNode = $altNode
         Return $result
     }
-    Set-Variable -Name currentNode -Value $altNode -Scope Global
+    #Set-Variable -Name currentNode -Value $altNode -Scope Global
     If($wait -eq $true){ # print read out and wait
         $result | ForEach-Object {Write-Host $_}
         $throwAway = Read-Host "`n Press ENTER to continue"
@@ -318,7 +321,7 @@ Function Get-ReplicaConfig { # retrieve replica configuration
         $altNode = Read-Host "Please Input an alternate NODE:PORT"
         $currentNode = $altNode
         Set-Variable -Name currentNode -Value $altNode -Scope Global
-        $result = Get-ReplicaStatus -node $altNode 
+        $result = Get-ReplicaStatus -node $altNode -
         Return $result
     }
 
@@ -416,7 +419,7 @@ Function Get-Primary { # gets replica set stats and determines the primary
 }
 
 Function Get-Nodes { # gets replica set stats and determines the primary
-    param($altNode="",$quiet=$false)
+    param($altNode=$currentNode,$quiet=$false)
     $rsStatus = Get-ReplicaStatus -node $altNode -quiet $quiet
     
     #$allNodes = @{}
@@ -475,6 +478,7 @@ Function Get-OptionList { # &"MyFunctionName" $arg1 $arg2
                           "Setup automatic backups           " = 9; `
                           "Restore backup from date          " = "r"; `
                           "Generate connection string        " = "c"; `
+                          "View replica set (pretty)         " = "v"; `
                           "Exit                              " = "x"}
 
     Write-Host "`nOptions ---`n"
@@ -530,6 +534,10 @@ Function Get-OptionList { # &"MyFunctionName" $arg1 $arg2
         Generate-ConnectionString
         Get-OptionList # return to options
     }
+    ElseIf ($slct.ToLower() -eq "v") {
+        Print-ReplicaStatus -wait $true
+        Get-OptionList # return to options
+    }
     ElseIf ($slct.ToLower() -eq "x") {
         Write-Host "`nFarewell.... you monster"
         Exit # done
@@ -567,7 +575,8 @@ $global:replicaLimit = $false # tagged as true when get-nodes finds 7 or more no
 $global:keyFile = "$scriptDir\keyfile"
 $global:key = "F823589A578B5613M9656J585ED84"
 $global:currentPrimary = ""
-$global:currentNode = ""
+New-Variable -Name "currentNode" -Visibility Public -Value "" -Option AllScope
+#$global:currentNode = ""
 # configure as desired
 
 
