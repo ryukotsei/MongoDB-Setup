@@ -187,7 +187,7 @@ Function Print-ReplicaStatus { # show more formatted view of the replica members
     $nodes = Get-Nodes -quiet $true
     $headers = ""
     $nodes | GM | Where MemberType -eq "NoteProperty" | Select-Object Name | ForEach-Object {$headers += $_.Name + "      "}
-    Write-Host $headers
+    Write-Host "`n"$headers
     $nodes | ForEach-Object {Write-Host $_.Id "   " $_.NodeName "   " $_.State}
     If ($wait -eq $true){$throwAway = Read-Host "`nPress Enter to continue"}
 }
@@ -267,7 +267,7 @@ Function Get-ReplicaStatus { # retrieve the status of the replica
     $server = $node.Split(":")[0]
     $port = $node.Split(":")[1]
     $nodeString = "--host $server --port $port"
-    write-host "Initial node value: $node"
+    If ($quiet -eq $false) {write-host "Initial node value: $node"}
     If ($quiet -eq $false) {Write-Host "Current node: $node"}
     If ($quiet -eq $false) {Write-Host "`nRetrieving replica status...`n"}
 
@@ -381,10 +381,11 @@ Function Create-ScheduledBackup { # creates Windows scheduled task to backup
         Copy-Item -Path $backupScript -Destination $backupDir -Confirm:$false -Force
     }
     Print-ReplicaStatus -quiet $true
-    Write-Host "`nThis will setup the mongo DB to automatically backup daily. You can change these settings at any time under Windows Task Scheduler."
-    Write-Host "This script will setup the backups to happen daily.`nTask name: $taskName`n"
     
-    $prt = Read-Host "Enter a local Mongo node port"
+    Write-Host "`nThis script will setup Mongo daily backups as a Windows Scheduled Task."
+    Write-Host "You can change these settings at any time under Windows Task Scheduler.`nTask name: $taskName`n"
+    
+    $prt = Read-Host "Enter a LOCAL Mongo node PORT from above"
     $time = Read-Host "Enter the time of day should we backup (e.g. 3:30am)"
 
     # copy over vbs script that calls the powershell script with admin priveleges
