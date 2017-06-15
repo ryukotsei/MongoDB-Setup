@@ -475,6 +475,11 @@ Function Get-InitialCurrentNode { # try to find a node on the local computer
 
     return $initialNode
 }
+
+Function Get-DefaultRoot {
+    If ($env:GC_MONGO_HOME -ne $null){Return $env:GC_MONGO_HOME}
+    Else {Return $altRoot}
+}
  
 Function Generate-ConnectionString { # build and output connection string for the replica and its nodes
     # https://docs.mongodb.com/manual/reference/connection-string/
@@ -582,7 +587,10 @@ Function Get-OptionList { # &"MyFunctionNameb" $arg1 $arg2
 
 # variables - change to enviro
 
-$scriptDir = Split-Path -Parent $MyInvoc leOutput = $true # output logging to console
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$global:consoleOutput = $true # output logging to console
+$global:altRoot = "C:\MongoOthers"
+$global:defaultRoot = Get-DefaultRoot
 $global:rsName = "dispatchmap" # replicaSet name
 $global:backupScriptName = "gogoMDBBackup.ps1"
 $global:backupTaskScriptName = "backupMongo.vbs"
@@ -614,6 +622,7 @@ If ($currentNode -eq $null) { # so we dont get an error after stopping the scrip
 
 Write-Host "`nMongoDB Setup Script!`nComputerName: $env:COMPUTERNAME"
 Write-Host "Local node: $currentNode"
+Write-Host "Root Mongo path: $defaultRoot"
 Write-Host "Log path: $logFile"
 
 Get-OptionList
