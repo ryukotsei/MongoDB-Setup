@@ -570,8 +570,9 @@ Function Delete-Node {
     
     # if you are trying to delete your primary then fuck u
     If ($node -eq $currentPrimary) {
-        Write-host "OMG you want to kill your PRIMARY node! Not gonna happen buddy."
-        Write-host "If you really want to kill you faithful Primary node then stop the service for a minute and then it wont be the primary anymore."
+        Write-host "`nOMG you want to kill your PRIMARY node! Not gonna happen buddy."
+        Write-host "If you really want to kill your faithful Primary node then stop the service. Then it wont be the primary anymore and you can do whatever you want to it."
+        $throwAway = Read-Host "`nPress ENTER to continue you heartless animal!"
         Return
     }
 
@@ -605,11 +606,6 @@ Function Delete-Node {
     Get-NetFirewallRule -DisplayName "$serviceName Inbound $nodePort" | Remove-NetFirewallRule -Confirm:$false
 
     Write-host "`nDone."
-    If ($node -eq $currentPrimary) { # you just delete the primary! You rascal
-        Write-Host "You just wiped you your primary node! You sir, are a maverick renegade god!`nNow we have to find a new one tho..."
-        $currentNode = Get-InitialCurrentNode # ok, find the new primary...
-    }
-    
     Print-ReplicaStatus -wait $true # show us what you got!
 }
 
