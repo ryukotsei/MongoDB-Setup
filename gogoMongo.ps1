@@ -36,7 +36,7 @@ Function Create-Mongo {
         Create-Mongo
     }
     
-    $dbDir = join-path -Path $defaultRoot -ChildPath $srvcName
+    $dbDir = Join-Path -Path $defaultRoot -ChildPath $srvcName
     Confirm-Dir -dir $dbDir
 
     #Copy-Item -Path $keyFile -Destination $dbDir -Confirm:$false -Force
