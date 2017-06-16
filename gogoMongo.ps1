@@ -24,8 +24,12 @@ Function Create-Mongo {
     Write-Host "Existing Mongo services on this machine:`n"
     Get-WmiObject Win32_Service | Where-Object {$_.Description -eq 'MongoDB Server'} | Select-Object Name | ForEach-Object {Write-Host $_.Name}
     Confirm-Dir -dir $defaultRoot
-    $srvcName = Read-Host "`nNew Service name"
+    Write-Host "Please enter the following service parameters or (blank to go back).`n"
+    $srvcName = Read-Host "New Service name"
+    If ($srvcName -eq ""){Return}
     $prt = Read-Host "Port(default: 27017)"
+    If ($prt -eq ""){Return}
+
     If ($prt -eq ""){$prt = "27017"}
     If ($prt.Length -gt 5) {
         Write-Host "`nPort can only be 5 characters long! Try again."
@@ -207,7 +211,9 @@ Function Add-ToReplica { # add a node to the initated replica set
     Print-ReplicaStatus
     
     Write-Host "`nIMPORTANT: The node:port string specificed below is case sensitive."
-    $replicaNode = Read-Host "`nNew node's computername:port" # get node to be added
+    Write-Host "New nodes COMPUTERNAME:PORT (blank to go back).`n"
+    $replicaNode = Read-Host "COMPUTERNAME:PORT" # get node to be added
+    If ($replicaNode -eq ""){Return}
 
     Write-Log "`nAdding node: $replicaNode to replica set: $rsName..."
     $jsCommand = "rs.add(""$replicaNode"")"
@@ -226,8 +232,10 @@ Function Remove-FromReplica { # remove node from replica
     Print-ReplicaStatus
 
     Write-Host "`nIMPORTANT: The node:port string specificed below is case sensitive."
+    Write-Host "Node to remove NODE:PORT (blank to go back).`n"
+    $replicaNode = Read-Host "NODE:PORT" # get node to be removed
+    If ($replicaNode -eq ""){Return}
 
-    $replicaNode = Read-Host "`nNode to remove computername:port" # get node to be removed
     $jsCommand = "rs.remove(""$replicaNode"")"
 
     Write-Log "`nRemoving node: $replicaNode from replica set: $rsName..."
@@ -247,7 +255,11 @@ Function Add-Arbiter { # add a node to a replica as an arbiter
     Print-ReplicaStatus
     Write-Host "`nIMPORTANT: The node:port string specificed below is case sensitive."
 
-    $replicaNode = Read-Host "`nNode to add as arbiter computername:port" # get node to be removed
+    Write-Host "NODE:PORT to add as arbiter (blank to go back).`n"
+
+    $replicaNode = Read-Host "NODE:PORT" # get node to be removed
+    If ($replicaNode -eq ""){Return}
+
     $jsCommand = "rs.addArb(""$replicaNode"")"
 
     Write-Log "`nAdding arbiter node: $replicaNode to replica set: $rsName..."
@@ -281,8 +293,9 @@ Function Get-ReplicaStatus { # retrieve the status of the replica
     $status = $result -match """ok"" : 1"
 
     If ($status.Count -le 0) {
-        Write-Host "Unable to retrieve node status from the default local node."
-        $altNode = Read-Host "Please Input an alternate NODE:PORT"
+        Write-Host "Unable to retrieve node status from the default node.`nPlease Input an alternate NODE:Port (blank to go back)"
+
+        $altNode = Read-Host "NODE:PORT"
         Set-Variable -Name "currentNode" -Value $altNode -Scope Global -Option AllScope -Confirm:$false -Force
         #$global:currentNode = $altNode
         Write-Host "New currentNode: $currentNode"
@@ -318,8 +331,10 @@ Function Get-ReplicaConfig { # retrieve replica configuration
     $status = $result -match "Failed to connect"
 
     If ($status.Count -gt 0) {
-        Write-Host "Unable to retrieve node status from the default local node."
-        $altNode = Read-Host "Please Input an alternate NODE:PORT"
+        Write-Host "Unable to retrieve node config from the default node.`nPlease Input an alternate NODE:Port (blank to go back)"
+
+        $altNode = Read-Host "NODE:PORT"
+        If ($altNode -eq ""){Return}
         $currentNode = $altNode
         Set-Variable -Name currentNode -Value $altNode -Scope Global
         $result = Get-ReplicaStatus -node $altNode
@@ -336,8 +351,8 @@ Function Get-ReplicaConfig { # retrieve replica configuration
 
 Function Initiate-Replica { # initiates the replica
 
-    Write-Host "`nEnter the Computername:Port of the node to initiate the replica set on. All other nodes will be added to this, Primary, node."
-    $node = Read-Host "Node computername:port"
+    $node = Read-Host "`nComputername:port of a node to initiate replica set on (blank to go back)"
+    If ($node -eq ""){Return}
 
     Write-Host "Initiating replica for node: ..."
     $command = "rs.initiate()" # "localhost:$port/admin", 
