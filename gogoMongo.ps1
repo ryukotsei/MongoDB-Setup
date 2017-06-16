@@ -27,12 +27,18 @@ Function Create-Mongo {
     Write-Host "`nPlease enter the following service parameters or (blank to go back).`n"
     $srvcName = Read-Host "New Service name"
     If ($srvcName -eq ""){Return}
+    If ($srvcName -match " ") {
+        Write-Host "Your service name cannot contain spaces."
+        Create-Mongo
+        Return
+    }
     $prt = Read-Host "Port(example: 27017)"
     If ($prt -eq ""){Return}
 
     If ($prt.Length -gt 5) {
         Write-Host "`nPort can only be 5 characters long! Try again."
         Create-Mongo
+        Return
     }
     
     $dbDir = Join-Path -Path $defaultRoot -ChildPath $srvcName
@@ -563,7 +569,7 @@ Function Delete-Node {
     $node = $nodesList.nodeName -match $nodeTry # have to match it to actual node in replica set so that case is exactly correct
     
     # if you are trying to delete your primary then fuck u
-    If ($node -eq $primaryNode) {
+    If ($node -eq $currentPrimary) {
         Write-host "OMG you want to kill your PRIMARY node! Not gonna happen buddy."
         Write-host "If you really want to kill you faithful Primary node then stop the service for a minute and then it wont be the primary anymore."
         Return
@@ -767,7 +773,7 @@ Else {
 # configure as desired
 
 Write-Host "`nMongoDB Setup Script!`nComputerName: $env:COMPUTERNAME"
-Write-Host "Default node: $currentNode"
+Write-Host "Primary node: $currentNode"
 Write-Host "Root service path: $defaultRoot"
 Write-Host "Log path: $logFile"
 
