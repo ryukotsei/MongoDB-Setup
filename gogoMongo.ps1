@@ -21,16 +21,15 @@ Function Confirm-Dir { # create the directory if not exist
 
 Function Create-Mongo {
     Write-Host "`nInstall a new mongo node server to this machine."
-    Write-Host "Existing Mongo services on this machine:`n"
+    Write-Host "Existing Mongo service(s) on this machine:`n"
     Get-WmiObject Win32_Service | Where-Object {$_.Description -eq 'MongoDB Server'} | Select-Object Name | ForEach-Object {Write-Host $_.Name}
     Confirm-Dir -dir $defaultRoot
     Write-Host "`nPlease enter the following service parameters or (blank to go back).`n"
     $srvcName = Read-Host "New Service name"
     If ($srvcName -eq ""){Return}
-    $prt = Read-Host "Port(default: 27017)"
+    $prt = Read-Host "Port(example: 27017)"
     If ($prt -eq ""){Return}
 
-    If ($prt -eq ""){$prt = "27017"}
     If ($prt.Length -gt 5) {
         Write-Host "`nPort can only be 5 characters long! Try again."
         Create-Mongo
@@ -295,11 +294,20 @@ Function Get-ReplicaStatus { # retrieve the status of the replica
     # example: Invoke-Expression -Command "cmd /c ""C:\Program Files\MongoDB\Server\3.4\bin\mongo.exe"" --host srv-cm-3 --port 27019 --eval 'rs.status()'"
     If ($quiet -eq $false) {Write-Host "Attempting connection: $block"}
     $result = Invoke-Expression -Command "cmd /c $block"
+    
+    
+    $status = $result -match """code"" : 94" # no status from replica set. It does not exist
+
+    If ($status -eq $false) {
+        write-host "YOU WIN!"
+        If ($quiet -eq $false) {write-host "No replica set found."}
+        return ""
+    }
 
     $status = $result -match """ok"" : 1"
 
-    If ($status.Count -le 0) {
-        Write-Host "Unable to retrieve node status from the default node.`nPlease Input an alternate NODE:Port (blank to go back)"
+    If ($status -eq $false) {
+        Write-Host "Unable to retrieve node status from the replica set. If you do not initialized a replica set this is normal..`nPlease Input an alternate NODE:Port (blank to go back)"
 
         $altNode = Read-Host "NODE:PORT"
         Set-Variable -Name "currentNode" -Value $altNode -Scope Global -Option AllScope -Confirm:$false -Force
@@ -337,7 +345,7 @@ Function Get-ReplicaConfig { # retrieve replica configuration
     $status = $result -match "Failed to connect"
 
     If ($status.Count -gt 0) {
-        Write-Host "Unable to retrieve node config from the default node.`nPlease Input an alternate NODE:Port (blank to go back)"
+        Write-Host "Unable to retrieve node config from the replica set. If you do not initialized a replica set this is normal.`nPlease Input an alternate NODE:Port (blank to go back)"
 
         $altNode = Read-Host "NODE:PORT"
         If ($altNode -eq ""){Return}
@@ -425,7 +433,7 @@ Function Create-ScheduledBackup { # creates Windows scheduled task to backup
 }
 
 Function Get-Primary { # gets replica set stats and determines the primary
-    param($quiet=$false)
+    param($quiet=$false,$noCare=$false)
     $rsStatus = Get-ReplicaStatus -quiet $quiet
     If ($quiet -eq $false) {Write-Host "Searching for primary in replica set..."}
     $rsStatus | ForEach-Object {
@@ -459,8 +467,8 @@ Function Get-Nodes { # gets replica set stats and determines the primary
         If ($_ -match """stateStr"" : "){
             $state = $_ -replace """stateStr"" : """,""  -replace """," -replace "	",""
             #$allNodes.Add($nodeName, $state)
-            $nodes = [PSCustomObject] @{Id=$nodeID;NodeName=$nodeName;State=$state}
-            $allNodes += $nodes
+            $node = [PSCustomObject] @{Id=$nodeID;NodeName=$nodeName;State=$state;}
+            $allNodes += $node
         }
     }
     #$node = Select-Node -nodeList $allNodes
@@ -474,7 +482,6 @@ Function Get-InitialCurrentNode { # try to find a node on the local computer
     $nodeFolders = Get-Item -Path "$defaultRoot\*\log.log"
     If ($nodeFolders.Count -le 0){write-host "node folders blank"
     Return $null} # no nodes found
-    write-host "didnt return"
     $logFiles = $nodeFolders.FullName  # ENSURE IT finds the last process start in the log
     # cant get out of a foreach-object loop in powershell for some reason so i wrote the below workaround
     $logDef = 0
@@ -506,10 +513,26 @@ Function Get-InitialCurrentNode { # try to find a node on the local computer
 }
 
 Function Delete-Node {
-    Write-Host "`nThis will delete a node on the local machine. This includes: service, database and replica membership.`n`nMongo service(s) on this machine:"
-    
-    $services = Get-WmiObject Win32_Service | Where-Object {$_.Description -eq 'MongoDB Server'} | Select-Object Name
-    $services | ForEach-Object {Write-Host $_.Name}
+    Write-Host "`nThis will delete a node on the local machine. This includes: service, database and replica membership.`n`nMongo service(s) on this machine: $env:COMPUTERNAME"
+    Write-Host "Service -          Port -"
+    $services = Get-WmiObject Win32_Service | Where-Object {$_.Description -eq 'MongoDB Server'} | Select-Object Name, PathName
+    $services | ForEach-Object {
+        $next = $false # flag when we find '--port' so that the next iteration see that and assigns the value as the port
+        $pathVar = $_.PathName
+        $pathVar.split(" ") | ForEach-Object {
+            If ($next -eq $true){
+                $servicePort = $_ -replace " ",""
+                $next = $false
+            }
+            If ($_ -match "--port"){ # log the port
+                $next = $true
+                $servicePort = $_ -replace "--port ",""
+            }
+        }
+        $serviceName = $_.Name
+        
+        Write-Host "$serviceName          $servicePort"
+    }
 
     Write-Host "`nEnter a service name from above to DELETE it (blank to go back).`n"
     $serviceName = Read-Host "Service name"
@@ -521,7 +544,7 @@ Function Delete-Node {
         Return
     }
 
-    # find service's node:port and remove it from the replica
+    # find service's node:port in the replica and remove it from the replica
     $serviceDir = "$defaultRoot\$serviceName"
     $nodeLog = Get-Item -Path "$serviceDir\log.log"
     $logContent = Get-Content $nodeLog.FullName
@@ -535,10 +558,32 @@ Function Delete-Node {
             $nodePort = $_ -replace "port=",""
         }
     }
-    $node = $env:COMPUTERNAME + ":" + $nodePort
-    Write-Host "Found node:port to remove from replica: $node"
-    Remove-FromReplica -quiet $true -replicaNode $node # remove the node from the replica
+    $nodeTry = $env:COMPUTERNAME + ":" + $nodePort # change !
+    $nodesList = Get-Nodes -quiet $true
+    $node = $nodesList.nodeName -match $nodeTry # have to match it to actual node in replica set so that case is exactly correct
     
+    # if you are trying to delete your primary then fuck u
+    If ($node -eq $primaryNode) {
+        Write-host "OMG you want to kill your PRIMARY node! Not gonna happen buddy."
+        Write-host "If you really want to kill you faithful Primary node then stop the service for a minute and then it wont be the primary anymore."
+        Return
+    }
+
+    If ($node.Count -ne 1) {
+        Write-Host "`nUnable to find node: $nodeTry`n"
+    }
+    Else {
+        Write-Host "Found node:port to remove from replica: $node`n"
+        Remove-FromReplica -quiet $true -replicaNode $node # remove the node from the replica
+    }
+
+    # so, service cannot be stopped and deleted before the node is all done being removed from the replica. So we are going to check on it.
+    Write-Host "Waiting for replica set to confirm node removal..."
+    $timeout = (Get-Date).AddSeconds(30)
+    Do {$nodes = Get-Nodes -quiet $true} Until ($node -notin $nodes.NodeName -or (Get-Date) -gt $timeout)
+    If ((Get-Date) -gt $timeout) {Write-Host "Failed to remove from replica set."}
+
+
     Write-Host "Stopping service: $serviceName" # stop the service
     Stop-Service -Name $serviceName -Confirm:$false -Force -ErrorAction Ignore
 
@@ -554,6 +599,11 @@ Function Delete-Node {
     Get-NetFirewallRule -DisplayName "$serviceName Inbound $nodePort" | Remove-NetFirewallRule -Confirm:$false
 
     Write-host "`nDone."
+    If ($node -eq $currentPrimary) { # you just delete the primary! You rascal
+        Write-Host "You just wiped you your primary node! You sir, are a maverick renegade god!`nNow we have to find a new one tho..."
+        $currentNode = Get-InitialCurrentNode # ok, find the new primary...
+    }
+    
     Print-ReplicaStatus -wait $true # show us what you got!
 }
 
@@ -705,7 +755,7 @@ If ($currentNode -eq $null) { # so we dont get an error after stopping the scrip
     New-Variable -Name "currentNode" -Visibility Public -Value $localNode -Option AllScope
     
     If ($localNode -ne $null) {
-        $currentPrimary = Get-Primary -quiet $true # now that we have found a local node that's part of the replica, we can use it to hop to the primary and set it as the de facto node
+        $currentPrimary = Get-Primary -quiet $true -noCare $true # now that we have found a local node that's part of the replica, we can use it to hop to the primary and set it as the de facto node
         $currentNode = $currentPrimary 
     }
 }
