@@ -472,8 +472,9 @@ Function Get-InitialCurrentNode { # try to find a node on the local computer
     $initialNode = ""
     Write-Host "Searching for an available local node..."
     $nodeFolders = Get-Item -Path "$defaultRoot\*\log.log"
-    If ($nodeFolders.Count -le 0){Return ""} # no nodes found
-
+    If ($nodeFolders.Count -le 0){write-host "node folders blank"
+    Return $null} # no nodes found
+    write-host "didnt return"
     $logFiles = $nodeFolders.FullName  # ENSURE IT finds the last process start in the log
     # cant get out of a foreach-object loop in powershell for some reason so i wrote the below workaround
     $logDef = 0
@@ -697,17 +698,20 @@ $global:replicaLimit = $false # tagged as true when get-nodes finds 7 or more no
 $global:keyFile = "$scriptDir\keyfile"
 $global:key = "F823589A578B5613M9656J585ED84"
 $global:currentPrimary = ""
-
+Remove-Variable -Name currentNode -Confirm:$false -Force
 
 If ($currentNode -eq $null) { # so we dont get an error after stopping the script and running it again
     $localNode = Get-InitialCurrentNode # find the local node by searching the defaultRoot for a service's log file content
     New-Variable -Name "currentNode" -Visibility Public -Value $localNode -Option AllScope
-    $currentPrimary = Get-Primary -quiet $true # now that we have found a local node that's part of the replica, we can use it to hop to the primary and set it as the de facto node
-    $currentNode = $currentPrimary 
+    
+    If ($localNode -ne $null) {
+        $currentPrimary = Get-Primary -quiet $true # now that we have found a local node that's part of the replica, we can use it to hop to the primary and set it as the de facto node
+        $currentNode = $currentPrimary 
+    }
 }
 Else {
     $currentPrimary = Get-Primary -quiet $true # now that we have found a local node that's part of the replica, we can use it to hop to the primary and set it as the de facto node
-    $currentNode = $currentPrimary 
+    $currentNode = $currentPrimary
 }
 
 # configure as desired
