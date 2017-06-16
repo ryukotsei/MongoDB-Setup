@@ -24,7 +24,7 @@ Function Create-Mongo {
     Write-Host "Existing Mongo services on this machine:`n"
     Get-WmiObject Win32_Service | Where-Object {$_.Description -eq 'MongoDB Server'} | Select-Object Name | ForEach-Object {Write-Host $_.Name}
     Confirm-Dir -dir $defaultRoot
-    Write-Host "Please enter the following service parameters or (blank to go back).`n"
+    Write-Host "`nPlease enter the following service parameters or (blank to go back).`n"
     $srvcName = Read-Host "New Service name"
     If ($srvcName -eq ""){Return}
     $prt = Read-Host "Port(default: 27017)"
@@ -226,24 +226,30 @@ Function Add-ToReplica { # add a node to the initated replica set
 }
 
 Function Remove-FromReplica { # remove node from replica
-    Write-Host "`nThis is for removing a replica set member node from the replica set.`nThis will require connecting to the primary node.`n"
-    Write-Host "Retrieving exiting nodes...`n"
+    param($quiet=$false,$replicaNode="")
+    
+    If ($quiet -eq $false) {
+        Write-Host "`nThis is for removing a replica set member node from the replica set.`nThis will require connecting to the primary node.`n"
+        Write-Host "Retrieving exiting nodes...`n"
 
-    Print-ReplicaStatus
+        Print-ReplicaStatus
 
-    Write-Host "`nIMPORTANT: The node:port string specificed below is case sensitive."
-    Write-Host "Node to remove NODE:PORT (blank to go back).`n"
-    $replicaNode = Read-Host "NODE:PORT" # get node to be removed
+        Write-Host "`nIMPORTANT: The node:port string specificed below is case sensitive."
+        Write-Host "Node to remove NODE:PORT (blank to go back).`n"
+    }
+    
+    If ($replicaNode -eq ""){$replicaNode = Read-Host "NODE:PORT"} # get node to be removed
     If ($replicaNode -eq ""){Return}
-
+    
     $jsCommand = "rs.remove(""$replicaNode"")"
 
     Write-Log "`nRemoving node: $replicaNode from replica set: $rsName..."
     Run-JavaScript -command $jsCommand
-
-    Write-Log "`nIssued command to remove node from replica set: $replicaNode `nCheck replica config for confirmation"
-    Evaluate-NodeCount
-    $throwAway = Read-Host "Press ENTER to continue" 
+    If ($quiet -eq $false) {
+        Write-Log "`nIssued command to remove node from replica set: $replicaNode `nCheck replica config for confirmation"
+        Evaluate-NodeCount
+        $throwAway = Read-Host "Press ENTER to continue"
+    }
 }
 
 Function Add-Arbiter { # add a node to a replica as an arbiter
@@ -350,8 +356,8 @@ Function Get-ReplicaConfig { # retrieve replica configuration
 }
 
 Function Initiate-Replica { # initiates the replica
-
-    $node = Read-Host "`nComputername:port of a node to initiate replica set on (blank to go back)"
+    Write-Host "`nNODE:PORT of a mongo instance to initiate replica set on (blank to go back).`n"
+    $node = Read-Host "NODE:PORT"
     If ($node -eq ""){Return}
 
     Write-Host "Initiating replica for node: ..."
@@ -375,8 +381,7 @@ Function Create-ScheduledBackup { # creates Windows scheduled task to backup
 
     $taskTest = Get-ScheduledTask -TaskName $taskName -ErrorAction Ignore
     If ($taskTest -ne $null) { # task already exists
-        Write-Host "`nAutomatic backup scheduled task already exists!`nDetails:"
-        Write-Host $taskTest.Actions.Arguments
+        Write-Host "`nAutomatic backup scheduled task already exists!`nTask action:"$taskTest.Actions.Arguments
         $taskStart = [datetime]$taskTest.Triggers.StartBoundary
         Write-Host "Runs daily @: $taskStart"
         $redo = Read-Host "`nRedo backup scheduled task(y/n)?"
@@ -422,7 +427,7 @@ Function Create-ScheduledBackup { # creates Windows scheduled task to backup
 Function Get-Primary { # gets replica set stats and determines the primary
     param($quiet=$false)
     $rsStatus = Get-ReplicaStatus -quiet $quiet
-    If ($quiet -ne $true) {Write-Host "Searching for primary in replica set..."}
+    If ($quiet -eq $false) {Write-Host "Searching for primary in replica set..."}
     $rsStatus | ForEach-Object {
         If ($_ -match """name"" : "){
             $nodeStored = $_
@@ -433,7 +438,7 @@ Function Get-Primary { # gets replica set stats and determines the primary
     }
     $primary = $primary -replace """name"" : """,""  -replace """," -replace "	",""
     $currentPrimary = $primary
-    If ($quiet -ne $true) {Write-host "`nPrimary identified as: $primary"}
+    If ($quiet -eq $false) {Write-host "`nPrimary identified as: $primary"}
     return $primary
 }
 
@@ -463,6 +468,7 @@ Function Get-Nodes { # gets replica set stats and determines the primary
 }
 
 Function Get-InitialCurrentNode { # try to find a node on the local computer
+    
     $initialNode = ""
     Write-Host "Searching for an available local node..."
     $nodeFolders = Get-Item -Path "$defaultRoot\*\log.log"
@@ -498,6 +504,59 @@ Function Get-InitialCurrentNode { # try to find a node on the local computer
     Return $initialNode
 }
 
+Function Delete-Node {
+    Write-Host "`nThis will delete a node on the local machine. This includes: service, database and replica membership.`n`nMongo service(s) on this machine:"
+    
+    $services = Get-WmiObject Win32_Service | Where-Object {$_.Description -eq 'MongoDB Server'} | Select-Object Name
+    $services | ForEach-Object {Write-Host $_.Name}
+
+    Write-Host "`nEnter a service name from above to DELETE it (blank to go back).`n"
+    $serviceName = Read-Host "Service name"
+    If ($serviceName -eq ""){Return}
+
+    If ($serviceName -notin $services.Name) {
+        write-host "Invalid service name. Try again."
+        Delete-Node
+        Return
+    }
+
+    # find service's node:port and remove it from the replica
+    $serviceDir = "$defaultRoot\$serviceName"
+    $nodeLog = Get-Item -Path "$serviceDir\log.log"
+    $logContent = Get-Content $nodeLog.FullName
+    $logContent | ForEach-Object {
+        If ($_ -match "MongoDB starting"){
+            $nodeLine = $_
+        }
+    }
+    $nodeLine.split(" ") | ForEach-Object {
+        If ($_ -match "port="){ # log the port
+            $nodePort = $_ -replace "port=",""
+        }
+    }
+    $node = $env:COMPUTERNAME + ":" + $nodePort
+    Write-Host "Found node:port to remove from replica: $node"
+    Remove-FromReplica -quiet $true -replicaNode $node # remove the node from the replica
+    
+    Write-Host "Stopping service: $serviceName" # stop the service
+    Stop-Service -Name $serviceName -Confirm:$false -Force -ErrorAction Ignore
+
+    Write-Host "Deleting service: $serviceName" # delete the service
+    Invoke-Expression "cmd /c sc delete ""$serviceName"""
+
+    
+    Write-Host "Deleting service directory: $serviceDir"
+    Remove-Item -Path $serviceDir -Recurse -Confirm:$false -Force # delete the service directory's folder
+
+    Write-Host "Removing Windows Firewall rules for the service..." # remove the inbound and outbound firewall rules
+    Get-NetFirewallRule -DisplayName "$serviceName Outbound $nodePort" | Remove-NetFirewallRule -Confirm:$false
+    Get-NetFirewallRule -DisplayName "$serviceName Inbound $nodePort" | Remove-NetFirewallRule -Confirm:$false
+
+    Write-host "`nDone."
+    Print-ReplicaStatus -wait $true # show us what you got!
+}
+
+
 Function Get-DefaultRoot {
     If ($env:GC_MONGO_HOME -ne $null){Return $env:GC_MONGO_HOME}
     Else {Return $altRoot}
@@ -522,7 +581,6 @@ Function Generate-ConnectionString { # build and output connection string for th
     $throwAway = Read-Host "`nPress ENTER to continue"
 }
 
-
 Function Get-OptionList { # &"MyFunctionNameb" $arg1 $arg2
     $options = [ordered]@{"New Mongo node                    " = 1; `
                           "Initiate replica set              " = 2; `
@@ -534,6 +592,7 @@ Function Get-OptionList { # &"MyFunctionNameb" $arg1 $arg2
                           "Load MongoShell                   " = 8; `
                           "Setup automatic backups           " = 9; `
                           "Restore backup from date          " = "r"; `
+                          "Delete mongo node                 " = "d"; `
                           "Generate connection string        " = "c"; `
                           "View replica set (pretty)         " = "v"; `
                           "Exit                              " = "x"}
@@ -586,6 +645,10 @@ Function Get-OptionList { # &"MyFunctionNameb" $arg1 $arg2
     ElseIf ($slct.ToLower() -eq "r") {
         Restore-Backup
         Exit # done
+    }
+    ElseIf ($slct.ToLower() -eq "d") {
+        Delete-Node
+        Get-OptionList # return to options
     }
     ElseIf ($slct.ToLower() -eq "c") {
         Generate-ConnectionString
@@ -650,8 +713,8 @@ Else {
 # configure as desired
 
 Write-Host "`nMongoDB Setup Script!`nComputerName: $env:COMPUTERNAME"
-Write-Host "Local node: $currentNode"
-Write-Host "Root Mongo path: $defaultRoot"
+Write-Host "Default node: $currentNode"
+Write-Host "Root service path: $defaultRoot"
 Write-Host "Log path: $logFile"
 
 Get-OptionList
