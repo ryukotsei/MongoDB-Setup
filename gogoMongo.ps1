@@ -160,7 +160,7 @@ db.createUser(
 
     Start-Process -FilePath "$mongoShell" -ArgumentList ($primaryNode) -WindowStyle Normal -Verb RunAs -Wait
     
-    $enableAuth = Read-Host "If you command succeeded then enter 'y' to activate."
+    $enableAuth = Read-Host "If your command succeeded then enter 'y' to activate."
     If ($enableAuth.ToLower() -ne "y"){Return}
 
     
@@ -177,7 +177,7 @@ Function Run-JavaScript { # run any javascript
     $server = $primaryNode.Split(":")[0]
     $port = $primaryNode.Split(":")[1]
     $nodeString = "--host $server --port $port"
-    Write-Host "Connected to primary node: $primaryNode"
+    Write-Log "Connected to primary node: $primaryNode"
 
     # do the thing where we type into a file and run it as a script thing to do stuff
     $tempJS = "$defaultRoot\tempJS.js"
@@ -206,7 +206,7 @@ Function Evaluate-NodeCount { # determine if there is an even number of nodes. I
     $nodes = Get-Nodes
     $nodeCount = $nodes.Count
     If ($nodeCount%2 -eq 0){
-        Write-Host "`nNOTICE: You have an even amount of nodes: $nodeCount. If this is your final node, please create another and add it to the replica set as an arbiter."
+        Write-Log "`nNOTICE: You have an even amount of nodes: $nodeCount. If this is your final node, please create another and add it to the replica set as an arbiter."
     }
 }
 
@@ -374,10 +374,10 @@ Function Initiate-Replica { # initiates the replica
     $node = Read-Host "NODE:PORT"
     If ($node -eq ""){Return}
 
-    Write-Host "Initiating replica for node: ..."
+    Write-Log "Initiating replica for node: ..."
     $command = "rs.initiate()" # "localhost:$port/admin", 
     Start-Process -FilePath $mongoShell -ArgumentList ($node, "-eval", $command) -WindowStyle Normal -Verb RunAs -Wait
-    Write-Host "Complete.`n"
+    Write-Log "Complete.`n"
 }
 
 
@@ -545,7 +545,7 @@ Function Delete-Node {
     If ($serviceName -eq ""){Return}
 
     If ($serviceName -notin $services.Name) {
-        write-host "Invalid service name. Try again."
+        Write-Host "Invalid service name. Try again."
         Delete-Node
         Return
     }
@@ -577,31 +577,31 @@ Function Delete-Node {
     }
 
     If ($node.Count -ne 1) {
-        Write-Host "`nUnable to find node: $nodeTry`n"
+        Write-Log "`nUnable to find node: $nodeTry`n"
     }
     Else {
-        Write-Host "Found node:port to remove from replica: $node`n"
+        Write-Log "Found node:port to remove from replica: $node`n"
         Remove-FromReplica -quiet $true -replicaNode $node # remove the node from the replica
     }
 
     # so, service cannot be stopped and deleted before the node is all done being removed from the replica. So we are going to check on it.
-    Write-Host "Waiting for replica set to confirm node removal..."
+    Write-Log "Waiting for replica set to confirm node removal..."
     $timeout = (Get-Date).AddSeconds(30)
     Do {$nodes = Get-Nodes -quiet $true} Until ($node -notin $nodes.NodeName -or (Get-Date) -gt $timeout)
     If ((Get-Date) -gt $timeout) {Write-Host "Failed to remove from replica set."}
 
 
-    Write-Host "Stopping service: $serviceName" # stop the service
+    Write-Log "Stopping service: $serviceName" # stop the service
     Stop-Service -Name $serviceName -Confirm:$false -Force -ErrorAction Ignore
 
-    Write-Host "Deleting service: $serviceName" # delete the service
+    Write-Log "Deleting service: $serviceName" # delete the service
     Invoke-Expression "cmd /c sc delete ""$serviceName"""
 
     
-    Write-Host "Deleting service directory: $serviceDir"
+    Write-Log "Deleting service directory: $serviceDir"
     Remove-Item -Path $serviceDir -Recurse -Confirm:$false -Force # delete the service directory's folder
 
-    Write-Host "Removing Windows Firewall rules for the service..." # remove the inbound and outbound firewall rules
+    Write-Log "Removing Windows Firewall rules for the service..." # remove the inbound and outbound firewall rules
     Get-NetFirewallRule -DisplayName "$serviceName Outbound $nodePort" | Remove-NetFirewallRule -Confirm:$false
     Get-NetFirewallRule -DisplayName "$serviceName Inbound $nodePort" | Remove-NetFirewallRule -Confirm:$false
 
@@ -611,6 +611,7 @@ Function Delete-Node {
 
 
 Function Get-DefaultRoot {
+    param($enviroRoot)
     If ($env:GC_MONGO_HOME -ne $null){Return $env:GC_MONGO_HOME}
     Else {Return $altRoot}
 }
@@ -634,7 +635,7 @@ Function Generate-ConnectionString { # build and output connection string for th
     $throwAway = Read-Host "`nPress ENTER to continue"
 }
 
-Function Get-OptionList { # &"MyFunctionNameb" $arg1 $arg2
+Function Get-OptionList {
     $options = [ordered]@{"New Mongo node                    " = 1; `
                           "Initiate replica set              " = 2; `
                           "Add node to replica set           " = 3; `
@@ -644,7 +645,7 @@ Function Get-OptionList { # &"MyFunctionNameb" $arg1 $arg2
                           "View replica config               " = 7; `
                           "Load MongoShell                   " = 8; `
                           "Setup automatic backups           " = 9; `
-                          "Restore backup from date          " = "r"; `
+                          "Restore backup                    " = "r"; `
                           "Delete mongo node                 " = "d"; `
                           "Generate connection string        " = "c"; `
                           "View replica set (pretty)         " = "v"; `
@@ -726,8 +727,9 @@ Function Get-OptionList { # &"MyFunctionNameb" $arg1 $arg2
 # variables - change to enviro
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $global:consoleOutput = $true # output logging to console
-$global:altRoot = "C:\MongoOthers"
-$global:defaultRoot = Get-DefaultRoot
+$global:altRoot = "C:\MongoOthers" # if
+$global:envRoot = $env:GC_MONGO_HOME
+$global:defaultRoot = Get-DefaultRoot -enviroRoot envRoot
 $global:rsName = "dispatchmap" # replicaSet name
 $global:backupScriptName = "gogoMDBBackup.ps1"
 $global:backupTaskScriptName = "backupMongo.vbs"
@@ -747,8 +749,8 @@ $global:mongoRestore = Join-Path -Path $mongoRoot -ChildPath "mongorestore.exe"
 $global:backupDir =  Join-Path -Path $defaultRoot -ChildPath "backups"
 $global:replicaLimit = $false # tagged as true when get-nodes finds 7 or more nodes in the replica set as
 
-$global:keyFile = "$scriptDir\keyfile"
-$global:key = "F823589A578B5613M9656J585ED84"
+#$global:keyFile = "$scriptDir\keyfile"
+#$global:key = "F823589A578B5613M9656J585ED84"
 $global:currentPrimary = ""
 Remove-Variable -Name currentNode -Confirm:$false -Force
 
