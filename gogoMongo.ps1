@@ -1,6 +1,11 @@
 ﻿# create mongo DB nodes and other stuff 
 # methods: https://docs.mongodb.com/manual/reference/method/
-
+If (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(`
+    [Security.Principal.WindowsBuiltInRole] “Administrator”))
+{
+    Write-Warning “You do not have Administrator rights to run this script!`nPlease re-run this script as an Administrator!”
+    Break
+}
 
 Function Write-Log { # output to logFile
     param($message)
@@ -382,12 +387,12 @@ Function Initiate-Replica { # initiates the replica
 
 
 Function Do-FirewallRules { # add firewall rules
-    param($srvcName, $prt)
+    param($srvcName, $port)
 
     If ((Get-NetFirewallRule -Name "MongoDB $srvcName" -erroraction Ignore) -eq $null) { # improve to query for port exception not name
         Write-Host "Creating firewall exceptions for TCP port: $port"
-        New-NetFirewallRule -LocalPort $prt -Name "$srvcName Inbound $prt" -DisplayName "$srvcName Inbound $prt" -Enabled True -Direction Inbound -Protocol TCP -Confirm:$false -ErrorAction Ignore | Out-Null
-        New-NetFirewallRule -LocalPort $prt -Name "$srvcName Outbound $prt" -DisplayName "$srvcName Outbound $prt" -Enabled True -Direction Outbound -Protocol TCP -Confirm:$false -ErrorAction Ignore | Out-Null
+        New-NetFirewallRule -LocalPort $port -Name "$srvcName Inbound $port" -DisplayName "$srvcName Inbound $port" -Enabled True -Direction Inbound -Protocol TCP -Confirm:$false -ErrorAction Ignore | Out-Null
+        New-NetFirewallRule -LocalPort $port -Name "$srvcName Outbound $port" -DisplayName "$srvcName Outbound $port" -Enabled True -Direction Outbound -Protocol TCP -Confirm:$false -ErrorAction Ignore | Out-Null
     }
 }
 
@@ -752,7 +757,11 @@ $global:replicaLimit = $false # tagged as true when get-nodes finds 7 or more no
 #$global:keyFile = "$scriptDir\keyfile"
 #$global:key = "F823589A578B5613M9656J585ED84"
 $global:currentPrimary = ""
-Remove-Variable -Name currentNode -Confirm:$false -Force
+
+if (Get-Variable currentNode -ErrorAction SilentlyContinue) {
+    Remove-Variable -Name currentNode -Confirm:$false -Force
+} 
+    
 
 If ($currentNode -eq $null) { # so we dont get an error after stopping the script and running it again
     $localNode = Get-InitialCurrentNode # find the local node by searching the defaultRoot for a service's log file content
