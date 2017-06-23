@@ -106,7 +106,7 @@ Function Initiate-ReplicaConfig {
 }
 
 Function Configure-Replica{
-    Write-Host "`nInitiate Replica Config --`nYou must have 3 nodes running to be able to initiate the replica.`nThis node will become the PRIMARY.`n"
+    Write-Host "`nInitiate Replica Config --`nYou must have 3 nodes running to be able to initiate the replica.`nThis node will become the PRIMARY node to the replica set.`n"
     
     $primaryNode = Read-Host "This host's (computername:port)"
     $rsConfig = @{
@@ -161,22 +161,11 @@ $config = "{ _id: """"$rsName"""", members: [{ _id : 0, host : """"$server" + ':
 # mongo --eval 'db.collection.find().forEach(printjson)'
 # delete replicaset: rs.remove('host:port')
 
-
-
-
-
-
-
 $params = @("localhost:27017/admin","rs.Status()")
 
 $test = & $mongoShell $params
 
-
-
 # que? configure das replica set de extraordinaire?
-
-
-
 $servers = @("localhost:27018", "localhost:27019")
 
 
@@ -212,15 +201,6 @@ rsconf = {
         host : localhost:27019}
     ]
 }
-#$dbDir = "$dir\$srvcName"
-
-#$result = Invoke-Expression -Command 
-
-# %ProgramData%\GeoComm\Mongo\<DBName>
-
-# > var cfg = { _id: 'ReplicaSet', members: [ { _id: 0, host: server + ':27017'}, { _id: 1, host: server + ':27018'}, { _id: 2, host:server + ':27019'} ] };
-
-
 
 Function Select-Node {
     param($nodeList)

@@ -41,7 +41,7 @@ Function Create-Mongo {
     If ($prt -eq ""){Return}
 
     If ($prt.Length -gt 5) {
-        Write-Host "`nPort can only be 5 characters long! Try again."
+        Write-Host "`nPort can only be 5 characters long!"
         Create-Mongo
         Return
     }
@@ -65,9 +65,9 @@ Function Create-Mongo {
         Invoke-Expression -Command "cmd /c $block"
     }
     Catch {
-        Write-Log "Try restarting this server or any existing Mongo nodes that are part of this replica set: $rsName"
+        Write-Log "Try restarting this server or any of the existing Mongo nodes that are part of this replica set: $rsName"
     }
-    Write-Log "Complete. Starting service..."
+    Write-Log "Complete. Starting Windows service..."
     Start-Service -Name $srvcName -Confirm:$false
     Write-Log "Done."
     Write-Log "Mongo node: $srvcName - service location: $dbDir"
@@ -104,7 +104,7 @@ Function Restore-Backup { # restores to the primary only
     $primary = Get-Primary
     $prt = $primary.Split(":")[1]
     If ($prt -eq $null){
-        $prt = Read-Host "Mongo node's Port on this server to restore too"
+        $prt = Read-Host "Mongo node's Port on this server to restore to"
     }
 
     $backups = Get-ChildItem -Path $backupDir -Directory | Select-Object Name
@@ -118,12 +118,12 @@ Function Restore-Backup { # restores to the primary only
         Return # stupid powershell
     }
     $backupRestore = Join-Path -Path $backupDir -ChildPath $backupTime
-    $proceed = Read-Host "`nAre you sure you want to proceed. No going back.(yes/no)"
+    $proceed = Read-Host "`nAre you sure you want to proceed? nDoing so will begin the restore process, losing any data.(Yes/No)"
     If ($proceed.ToLower() -ne "yes") {
-        Write-Host "`You chose not to proceed."
+        Write-Host "`Restore Cancelled."
         Return        
     }
-    Write-Log "Restoring backup: $backupRestore, to Node: $prt"
+    Write-Log "Restoring backup: $backupRestore, to node: $prt"
 
     # mongo --port 27017 -u myUserAdmin -p 'abc123' --authenticationDatabase 'admin'
 
@@ -211,7 +211,7 @@ Function Evaluate-NodeCount { # determine if there is an even number of nodes. I
     $nodes = Get-Nodes
     $nodeCount = $nodes.Count
     If ($nodeCount%2 -eq 0){
-        Write-Log "`nNOTICE: You have an even amount of nodes: $nodeCount. If this is your final node, please create another and add it to the replica set as an arbiter."
+        Write-Log "`nNOTICE: You have an even amount of nodes: $nodeCount. If this is your final node, please create another node, and add it to the replica set as an arbiter."
     }
 }
 
@@ -239,7 +239,7 @@ Function Remove-FromReplica { # remove node from replica
     param($quiet=$false,$replicaNode="")
     
     If ($quiet -eq $false) {
-        Write-Host "`nThis is for removing a replica set member node from the replica set.`nThis will require connecting to the primary node.`n"
+        Write-Host "`nThis function is for removing a member node from the replica set.`nThis will require connecting to the primary node.`n"
         Write-Host "Retrieving exiting nodes...`n"
 
         Print-ReplicaStatus
@@ -264,8 +264,8 @@ Function Remove-FromReplica { # remove node from replica
 
 Function Add-Arbiter { # add a node to a replica as an arbiter
     Write-Host "`n     ----------- ADD ARBITER - READ THIS ! -----------"
-    Write-Host "`nThis will add a node to the replica set as an arbiter. Arbiter nodes are added when you have an even # of nodes in a replica set to break ties."
-    Write-Host "`nIf your replica set has an even number of nodes and you are done deploying nodes:`nAdd a second node to one of your machines and use this to add it to the replica set as an arbiter.`n"
+    Write-Host "`nThis will add a node to the replica set as an arbiter. `nArbiter nodes are added when you have an even number of nodes in a replica set to break ties when they vote on which becomes the primary node."
+    Write-Host "`nIf your replica set has an even number of nodes and you are done deploying nodes:`nAdd an additional node to one of your machines and use this to add it to the replica set as an arbiter.`n"
     Write-Host "Remove the arbiter like another replica set member if you choose to add another node in the future. Adding another node would make the set have an even number."
     Write-Host "Retrieving exiting nodes...`n"
     Print-ReplicaStatus
@@ -281,7 +281,7 @@ Function Add-Arbiter { # add a node to a replica as an arbiter
     Write-Log "`nAdding arbiter node: $replicaNode to replica set: $rsName..."
     Run-JavaScript -command $jsCommand
 
-    Write-Log "`nIssued command to add node as arbiter to replica set: $replicaNode `nCheck replica config for confirmation"
+    Write-Log "`nIssued command to add node as the arbiter to the replica set: $replicaNode `nCheck the replica config for confirmation"
     Evaluate-NodeCount
     $throwAway = Read-Host "Press ENTER to continue" 
 }
@@ -318,7 +318,7 @@ Function Get-ReplicaStatus { # retrieve the status of the replica
     $status = $result -match """ok"" : 1"
 
     If ($status -eq $false) {
-        Write-Host "Unable to retrieve node status from the replica set. If you do not initialized a replica set this is normal..`nPlease Input an alternate NODE:Port (blank to go back)"
+        Write-Host "Unable to retrieve the node's status from the replica set. This is normally due to not initializing the replica set.`nPlease Input an alternate NODE:Port (blank to go back)"
 
         $altNode = Read-Host "NODE:PORT"
         Set-Variable -Name "currentNode" -Value $altNode -Scope Global -Option AllScope -Confirm:$false -Force
@@ -346,7 +346,7 @@ Function Get-ReplicaConfig { # retrieve replica configuration
         $port = $node.Split(":")[1]
         $nodeString = "--host $server --port $port"
     }
-    Write-Host "`nRetrieving replica configuration...`n"
+    Write-Host "`nRetrieving replica set configuration...`n"
     $params = @("rs.conf()") # "localhost:$port/admin", 
     $block ="""$mongoShell"" $nodeString --eval '$params'"
     # example: Invoke-Expression -Command "cmd /c ""C:\Program Files\MongoDB\Server\3.4\bin\mongo.exe"" --host srv-cm-3 --port 27019 --eval 'rs.status()'"
@@ -356,7 +356,7 @@ Function Get-ReplicaConfig { # retrieve replica configuration
     $status = $result -match "Failed to connect"
 
     If ($status.Count -gt 0) {
-        Write-Host "Unable to retrieve node config from the replica set. If you do not initialized a replica set this is normal.`nPlease Input an alternate NODE:Port (blank to go back)"
+        Write-Host "Unable to retrieve the node's status from the replica set. This is normally due to not initializing the replica set.`nPlease Input an alternate NODE:Port (blank to go back)"
 
         $altNode = Read-Host "NODE:PORT"
         If ($altNode -eq ""){Return}
@@ -375,7 +375,7 @@ Function Get-ReplicaConfig { # retrieve replica configuration
 }
 
 Function Initiate-Replica { # initiates the replica
-    Write-Host "`nNODE:PORT of a mongo instance to initiate replica set on (blank to go back).`n"
+    Write-Host "`nNODE:PORT of a mongo instance to initiate the replica set on (blank to go back).`n"
     $node = Read-Host "NODE:PORT"
     If ($node -eq ""){Return}
 
@@ -426,7 +426,7 @@ Function Create-ScheduledBackup { # creates Windows scheduled task to backup
     Write-Host "You can change these settings at any time under Windows Task Scheduler.`nTask name: $taskName`n"
     
     $prt = Read-Host "Enter a LOCAL Mongo node PORT from above"
-    $time = Read-Host "Enter the time of day should we backup (e.g. 3:30am)"
+    $time = Read-Host "Enter the time of day should we backup (e.g. 3:30am, 10:30pm)"
 
     # copy over vbs script that calls the powershell script with admin priveleges
     Copy-Item -Path $backupTaskScript -Destination $backupDir -Confirm:$false -Force
@@ -437,7 +437,7 @@ Function Create-ScheduledBackup { # creates Windows scheduled task to backup
     $trigger =  New-ScheduledTaskTrigger -Daily -At $time
     $principal = New-ScheduledTaskPrincipal -UserID "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 
-    Write-Log "Registering scheduled task: $taskName..."
+    Write-Log "Registering the scheduled task: $taskName..."
     Register-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -TaskName $taskName -Description "Daily backup of MongoDB node" -Force
 
     Write-Log "Scheduled task: $taskName is now registered and will run every day at: $time"
@@ -446,7 +446,7 @@ Function Create-ScheduledBackup { # creates Windows scheduled task to backup
 Function Get-Primary { # gets replica set stats and determines the primary
     param($quiet=$false,$noCare=$false)
     $rsStatus = Get-ReplicaStatus -quiet $quiet
-    If ($quiet -eq $false) {Write-Host "Searching for primary in replica set..."}
+    If ($quiet -eq $false) {Write-Host "Searching for primary in the replica set..."}
     $rsStatus | ForEach-Object {
         If ($_ -match """name"" : "){
             $nodeStored = $_
@@ -524,7 +524,7 @@ Function Get-InitialCurrentNode { # try to find a node on the local computer
 }
 
 Function Delete-Node {
-    Write-Host "`nThis will delete a node on the local machine. This includes: service, database and replica membership.`n`nMongo service(s) on this machine: $env:COMPUTERNAME"
+    Write-Host "`nThis will remove a node on the local machine. This action includes removal of the service, database and replica membership for the node entered.`n`nMongo service(s) on this machine: $env:COMPUTERNAME"
     Write-Host "Service -          Port -"
     $services = Get-WmiObject Win32_Service | Where-Object {$_.Description -eq 'MongoDB Server'} | Select-Object Name, PathName
     $services | ForEach-Object {
@@ -545,12 +545,12 @@ Function Delete-Node {
         Write-Host "$serviceName          $servicePort"
     }
 
-    Write-Host "`nEnter a service name from above to DELETE it (blank to go back).`n"
+    Write-Host "`nEnter a service name from above to REMOVE it (blank to go back).`n"
     $serviceName = Read-Host "Service name"
     If ($serviceName -eq ""){Return}
 
     If ($serviceName -notin $services.Name) {
-        Write-Host "Invalid service name. Try again."
+        Write-Host "Name entered is not a valid service."
         Delete-Node
         Return
     }
@@ -573,10 +573,10 @@ Function Delete-Node {
     $nodesList = Get-Nodes -quiet $true
     $node = $nodesList.nodeName -match $nodeTry # have to match it to actual node in replica set so that case is exactly correct
     
-    # if you are trying to delete your primary then fuck u
+    #Removal of the Primary node when it is running is not possible.
     If ($node -eq $currentPrimary) {
-        Write-host "`nOMG you want to kill your PRIMARY node! Not gonna happen buddy."
-        Write-host "If you really want to kill your faithful Primary node then stop the service. Then it wont be the primary anymore and you can do whatever you want to it."
+        Write-host "`nMongoDB prohibits you from removing your primary node while it is running."
+        Write-host "If you really want to remove your primary node, please stop the Windows service. `nAfter the service has stopped, you can remove the node as the remaining nodes will elect a new primary."
         $throwAway = Read-Host "`nPress ENTER to continue you heartless animal!"
         Return
     }
@@ -585,7 +585,7 @@ Function Delete-Node {
         Write-Log "`nUnable to find node: $nodeTry`n"
     }
     Else {
-        Write-Log "Found node:port to remove from replica: $node`n"
+        Write-Log "`nFound node:port " $node ":" $port "to remove from replica: $node`n"
         Remove-FromReplica -quiet $true -replicaNode $node # remove the node from the replica
     }
 
@@ -595,16 +595,17 @@ Function Delete-Node {
     Do {$nodes = Get-Nodes -quiet $true} Until ($node -notin $nodes.NodeName -or (Get-Date) -gt $timeout)
     If ((Get-Date) -gt $timeout) {Write-Host "Failed to remove from replica set."}
 
-
-    Write-Log "Stopping service: $serviceName" # stop the service
+    # stop the Windows service
+    Write-Log "Stopping Windows service: $serviceName" 
     Stop-Service -Name $serviceName -Confirm:$false -Force -ErrorAction Ignore
 
-    Write-Log "Deleting service: $serviceName" # delete the service
+    # remove the windows service
+    Write-Log "Removing Windows service: $serviceName" 
     Invoke-Expression "cmd /c sc delete ""$serviceName"""
 
-    
-    Write-Log "Deleting service directory: $serviceDir"
-    Remove-Item -Path $serviceDir -Recurse -Confirm:$false -Force # delete the service directory's folder
+    # remove the Windows service directory's folder
+    Write-Log "Removing Windows service directory: $serviceDir"
+    Remove-Item -Path $serviceDir -Recurse -Confirm:$false -Force 
 
     Write-Log "Removing Windows Firewall rules for the service..." # remove the inbound and outbound firewall rules
     Get-NetFirewallRule -DisplayName "$serviceName Outbound $nodePort" | Remove-NetFirewallRule -Confirm:$false
@@ -760,25 +761,27 @@ $global:currentPrimary = ""
 
 if (Get-Variable currentNode -ErrorAction SilentlyContinue) {
     Remove-Variable -Name currentNode -Confirm:$false -Force
-} 
-    
+}
 
-If ($currentNode -eq $null) { # so we dont get an error after stopping the script and running it again
+ 
+# so we dont get an error after stopping the script and running it again   
+If ($currentNode -eq $null) { 
     $localNode = Get-InitialCurrentNode # find the local node by searching the defaultRoot for a service's log file content
     New-Variable -Name "currentNode" -Visibility Public -Value $localNode -Option AllScope
     
+    # now that we have found a local node that's part of the replica, we can use it to hop to the primary and set it as the de facto node
     If ($localNode -ne $null) {
-        $currentPrimary = Get-Primary -quiet $true -noCare $true # now that we have found a local node that's part of the replica, we can use it to hop to the primary and set it as the de facto node
+        $currentPrimary = Get-Primary -quiet $true -noCare $true 
         $currentNode = $currentPrimary 
     }
 }
 Else {
-    $currentPrimary = Get-Primary -quiet $true # now that we have found a local node that's part of the replica, we can use it to hop to the primary and set it as the de facto node
+    # now that we have found a local node that's part of the replica, we can use it to hop to the primary and set it as the de facto node
+    $currentPrimary = Get-Primary -quiet $true 
     $currentNode = $currentPrimary
 }
 
 # configure as desired
-
 Write-Host "`nMongoDB Setup Script!`nComputerName: $env:COMPUTERNAME"
 Write-Host "Primary node: $currentNode"
 Write-Host "Root service path: $defaultRoot"
