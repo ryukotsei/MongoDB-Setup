@@ -495,6 +495,7 @@ Function Get-InitialCurrentNode { # try to find a node on the local computer
     Return $null} # no nodes found
     $logFiles = $nodeFolders.FullName  # ENSURE IT finds the last process start in the log
     # cant get out of a foreach-object loop in powershell for some reason so i wrote the below workaround
+    if($logFiles -isnot [system.array]){ $logFiles = @($logFiles) }
     $logDef = 0
     Do {
         $logContent = Get-Content $logFiles[$logDef]
@@ -518,7 +519,7 @@ Function Get-InitialCurrentNode { # try to find a node on the local computer
             $found = $true
         }
         $logDef++
-    } Until (($found -eq $true) -or $logDef -eq ($logFiles.Count - 1))
+    } Until (($found -eq $true) -or $logDef -ge ($logFiles.Count - 1))
 
     Return $initialNode
 }
