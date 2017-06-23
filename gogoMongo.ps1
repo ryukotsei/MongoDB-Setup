@@ -1,5 +1,7 @@
 ﻿# create mongo DB nodes and other stuff 
 # methods: https://docs.mongodb.com/manual/reference/method/
+
+# checking to make sure that this is running in Administrator PowerShell.
 If (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(`
     [Security.Principal.WindowsBuiltInRole] “Administrator”))
 {
@@ -53,7 +55,7 @@ Function Create-Mongo {
     #$keyCode = "$keyFile\$key"
 
     Do-FirewallRules -srvcName $srvcName -prt $prt
-
+    Write-Log "Preparing to execute on Mongo at this location ""$mongoEXE"""
     $params = @("--dbpath ""$dbDir""", "--replSet $rsName", "--rest", "--logpath ""$dbDir\log.log""", "--port $prt", "--serviceName ""$srvcName""", "--serviceDisplayName ""$srvcName""", "--install")
     Write-Log "Executing DB creation with params: $params"
     $block ="""$mongoEXE"" $params"
@@ -62,7 +64,7 @@ Function Create-Mongo {
     #Invoke-Command -ScriptBlock {cmd /c $block}
     # & $mongoEXE $params
     Try {
-        Invoke-Expression -Command "cmd /c $block"
+        Try-Mongo -mongoBlock $block        
     }
     Catch {
         Write-Log "Try restarting this server or any of the existing Mongo nodes that are part of this replica set: $rsName"
@@ -71,7 +73,11 @@ Function Create-Mongo {
     Start-Service -Name $srvcName -Confirm:$false
     Write-Log "Done."
     Write-Log "Mongo node: $srvcName - service location: $dbDir"
+}
 
+Function Try-Mongo {
+    param($mongoBlock=$null)
+        Invoke-Expression -Command "cmd /c $mongoBlock"
 }
 
 Function Load-MongoShell {
@@ -537,7 +543,7 @@ Function Delete-Node {
                 $next = $false
             }
             If ($_ -match "--port"){ # log the port
-                $next = $true
+                $next = $truegit 
                 $servicePort = $_ -replace "--port ",""
             }
         }
@@ -764,6 +770,12 @@ if (Get-Variable currentNode -ErrorAction SilentlyContinue) {
     Remove-Variable -Name currentNode -Confirm:$false -Force
 }
 
+#check to make sure MongoDB is installed.
+if(!(Test-Path $mongoRoot))
+{
+    Write-Warning "You do not have Mongo DB Installed!`nPlease install Mongo DB and run this script again."
+    Break
+}
  
 # so we dont get an error after stopping the script and running it again   
 If ($currentNode -eq $null) { 
