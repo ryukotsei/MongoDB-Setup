@@ -496,7 +496,7 @@ Function Get-InitialCurrentNode { # try to find a node on the local computer
     
     $initialNode = ""
     Write-Host "Searching for an available local node..."
-    $nodeFolders = Get-Item -Path "$defaultRoot\*\log.log"
+    $nodeFolders = Get-Item -Path "$defaultRoot\*\log.log" -ErrorAction SilentlyContinue
     If ($nodeFolders.Count -le 0){write-host "node folders blank"
     Return $null} # no nodes found
     $logFiles = $nodeFolders.FullName  # ENSURE IT finds the last process start in the log
